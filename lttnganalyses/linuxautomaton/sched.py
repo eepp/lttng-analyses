@@ -33,6 +33,7 @@ class SchedStateProvider(sp.StateProvider):
             'sched_migrate_task': self._process_sched_migrate_task,
             'sched_wakeup': self._process_sched_wakeup,
             'sched_wakeup_new': self._process_sched_wakeup,
+            'sched_waking': self._process_sched_wakeup,
             'sched_process_fork': self._process_sched_process_fork,
             'sched_process_exec': self._process_sched_process_exec,
         }
@@ -95,6 +96,8 @@ class SchedStateProvider(sp.StateProvider):
                                          prev_tid=prev_tid,
                                          next_tid=next_tid,
                                          next_comm=next_comm)
+        self._state.tids[next_tid].last_wakeup = None
+        self._state.tids[next_tid].last_waker = None
 
     def _process_sched_migrate_task(self, event):
         tid = event['tid']
@@ -111,14 +114,25 @@ class SchedStateProvider(sp.StateProvider):
     def _process_sched_wakeup(self, event):
         target_cpu = event['target_cpu']
         tid = event['tid']
+        current_cpu = event['cpu_id']
 
         if target_cpu not in self._state.cpus:
             self._state.cpus[target_cpu] = sv.CPU(target_cpu)
+
+        if current_cpu not in self._state.cpus:
+            self._state.cpus[current_cpu] = sv.CPU(current_cpu)
 
         if tid not in self._state.tids:
             proc = sv.Process()
             proc.tid = tid
             self._state.tids[tid] = proc
+        # a process can be woken up multiple times, only record
+        # the first one
+        if self._state.tids[tid].last_wakeup is None:
+            self._state.tids[tid].last_wakeup = event.timestamp
+            if self._state.cpus[current_cpu].current_tid is not None:
+                self._state.tids[tid].last_waker = \
+                    self._state.cpus[current_cpu].current_tid
 
     def _process_sched_process_fork(self, event):
         child_tid = event['child_tid']
