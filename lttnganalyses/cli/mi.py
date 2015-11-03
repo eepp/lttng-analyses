@@ -97,6 +97,7 @@ class TableClass:
 class ResultTable:
     def __init__(self, table_class, begin, end, subtitle=None):
         self._table_class = table_class
+        self._column_named_tuple = table_class.get_column_named_tuple()
         self._subtitle = subtitle
         self._timerange = TimeRange(begin, end)
         self._rows = []
@@ -114,7 +115,7 @@ class ResultTable:
         return self._subtitle
 
     def append_row(self, **kwargs):
-        row = self._table_class.get_column_named_tuple()(**kwargs)
+        row = self._column_named_tuple(**kwargs)
         self._rows.append(row)
 
     @property
