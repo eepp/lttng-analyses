@@ -245,7 +245,8 @@ class Command:
         if not args.path:
             self._cmdline_error('Please specify a trace path')
 
-        args.path = args.path[0]
+        if type(args.path) is list:
+            args.path = args.path[0]
 
     def _validate_transform_args(self, args):
         pass
