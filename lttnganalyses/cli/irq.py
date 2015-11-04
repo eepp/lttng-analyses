@@ -28,6 +28,7 @@ from ..linuxautomaton import common, sv
 from ..ascii_graph import Pyasciigraph
 from . import mi
 import math
+import itertools
 import statistics
 import sys
 
@@ -39,8 +40,8 @@ class IrqAnalysisCommand(Command):
     _MI_DESCRIPTION = 'Interrupt frequency distribution, statistics, and log'
     _MI_TAGS = [mi.Tags.INTERRUPT, mi.Tags.STATS, mi.Tags.FREQ, mi.Tags.LOG]
     _MI_TABLE_CLASS_LOG = 'log'
-    _MI_TABLE_CLASS_STATS = 'stats'
-    _MI_TABLE_CLASS_RAISE_STATS = 'raise-stats'
+    _MI_TABLE_CLASS_HARD_STATS = 'hard-stats'
+    _MI_TABLE_CLASS_SOFT_STATS = 'soft-stats'
     _MI_TABLE_CLASS_FREQ = 'freq'
     _MI_TABLE_CLASS_SUMMARY = 'summary'
     _MI_TABLE_CLASSES = [
@@ -54,8 +55,8 @@ class IrqAnalysisCommand(Command):
             ]
         ),
         (
-            _MI_TABLE_CLASS_STATS,
-            'Interrupt statistics', [
+            _MI_TABLE_CLASS_HARD_STATS,
+            'Hardware interrupt statistics', [
                 ('irq', 'Interrupt', mi.Irq),
                 ('count', 'Interrupt count', mi.Integer, 'interrupts'),
                 ('min_duration', 'Minimum duration', mi.Duration),
@@ -65,10 +66,15 @@ class IrqAnalysisCommand(Command):
             ]
         ),
         (
-            _MI_TABLE_CLASS_RAISE_STATS,
-            'Interrupt raise latency statistics', [
+            _MI_TABLE_CLASS_SOFT_STATS,
+            'Hardware interrupt statistics', [
                 ('irq', 'Interrupt', mi.Irq),
-                ('count', 'Interrupt raise count', mi.Integer, 'interrupt raises'),
+                ('count', 'Interrupt count', mi.Integer, 'interrupts'),
+                ('min_duration', 'Minimum duration', mi.Duration),
+                ('avg_duration', 'Average duration', mi.Duration),
+                ('max_duration', 'Maximum duration', mi.Duration),
+                ('stdev_duration', "Interrupt duration standard deviation", mi.Duration),
+                ('raise_count', 'Interrupt raise count', mi.Integer, 'interrupt raises'),
                 ('min_latency', 'Minimum raise latency', mi.Duration),
                 ('avg_latency', 'Average raise latency', mi.Duration),
                 ('max_latency', 'Maximum raise latency', mi.Duration),
@@ -94,26 +100,26 @@ class IrqAnalysisCommand(Command):
 
     def _analysis_tick(self, begin_ns, end_ns):
         log_table = None
-        stats_table = None
-        raise_stats_table = None
+        hard_stats_table = None
+        soft_stats_table = None
         freq_tables = None
 
         if self._args.log:
             log_table = self._get_log_result_table(begin_ns, end_ns)
 
         if self._args.stats or self._args.freq:
-            stats_table, raise_stats_table, freq_tables = \
+            hard_stats_table, soft_stats_table, freq_tables = \
                 self._get_stats_freq_result_tables(begin_ns, end_ns)
 
         if self._mi_mode:
             if log_table:
                 self._mi_append_result_table(log_table)
 
-            if stats_table and stats_table.rows:
-                self._mi_append_result_table(stats_table)
+            if hard_stats_table and hard_stats_table.rows:
+                self._mi_append_result_table(hard_stats_table)
 
-            if raise_stats_table and raise_stats_table.rows:
-                self._mi_append_result_table(raise_stats_table)
+            if soft_stats_table and soft_stats_table.rows:
+                self._mi_append_result_table(soft_stats_table)
 
             if freq_tables:
                 for freq_table in freq_tables:
@@ -122,8 +128,8 @@ class IrqAnalysisCommand(Command):
         else:
             self._print_date(begin_ns, end_ns)
 
-            if stats_table or freq_tables:
-                self._print_stats_freq(stats_table, raise_stats_table,
+            if hard_stats_table or soft_stats_table or freq_tables:
+                self._print_stats_freq(hard_stats_table, soft_stats_table,
                                        freq_tables)
                 if log_table:
                     print()
@@ -136,17 +142,23 @@ class IrqAnalysisCommand(Command):
             self._mi_clear_result_tables()
             return
 
-        stats_tables = self._mi_get_result_tables(self._MI_TABLE_CLASS_STATS)
-        begin = stats_tables[0].timerange.begin
-        end = stats_tables[-1].timerange.end
+        hard_stats_tables = \
+            self._mi_get_result_tables(self._MI_TABLE_CLASS_HARD_STATS)
+        soft_stats_tables = \
+            self._mi_get_result_tables(self._MI_TABLE_CLASS_SOFT_STATS)
+        assert(len(hard_stats_table) == len(soft_stats_tables))
+        begin = hard_stats_tables[0].timerange.begin
+        end = hard_stats_tables[-1].timerange.end
         summary_table = \
             self._mi_create_result_table(self._MI_TABLE_CLASS_SUMMARY,
                                          begin, end)
 
-        for stats_table in stats_tables:
-            for row in stats_table.rows:
+        for hs_table, ss_table in zip(hard_stats_tables, soft_stats_tables):
+            assert(hs_table.timerange == ss_table.timerange)
+
+            for row in itertools.chain(hs_table.rows, ss_table.rows):
                 summary_table.append_row(
-                    time_range=stats_table.timerange,
+                    time_range=hs_table.timerange,
                     count=row.count,
                 )
 
@@ -184,8 +196,7 @@ class IrqAnalysisCommand(Command):
 
         return result_table
 
-    def _append_stats_result_table_row(self, is_hard, irq_nr,
-                                       irq_stats, stats_table):
+    def _get_common_stats_result_table_row(self, is_hard, irq_nr, irq_stats):
         stdev = self._compute_duration_stdev(irq_stats)
 
         if math.isnan(stdev):
@@ -193,34 +204,62 @@ class IrqAnalysisCommand(Command):
         else:
             stdev = mi.Duration(stdev)
 
-        stats_table.append_row(
-            irq=mi.Irq(is_hard, irq_nr, irq_stats.name),
-            count=mi.Integer(irq_stats.count),
-            min_duration=mi.Duration(irq_stats.min_duration),
-            avg_duration=mi.Duration(irq_stats.total_duration / irq_stats.count),
-            max_duration=mi.Duration(irq_stats.max_duration),
-            stdev_duration=stdev,
+        return (
+            mi.Irq(is_hard, irq_nr, irq_stats.name),
+            mi.Integer(irq_stats.count),
+            mi.Duration(irq_stats.min_duration),
+            mi.Duration(irq_stats.total_duration / irq_stats.count),
+            mi.Duration(irq_stats.max_duration),
+            stdev,
         )
 
-    def _append_raise_stats_result_table_row(self, irq_nr, irq_stats,
-                                             raise_stats_table):
+    def _append_hard_stats_result_table_row(self, irq_nr, irq_stats,
+                                            hard_stats_table):
+        common_row = self._get_common_stats_result_table_row(True, irq_nr,
+                                                             irq_stats)
+        hard_stats_table.append_row(
+            irq=common_row[0],
+            count=common_row[1],
+            min_duration=common_row[2],
+            avg_duration=common_row[3],
+            max_duration=common_row[4],
+            stdev_duration=common_row[5],
+        )
+
+    def _append_soft_stats_result_table_row(self, irq_nr, irq_stats,
+                                            soft_stats_table):
+        common_row = self._get_common_stats_result_table_row(False, irq_nr,
+                                                             irq_stats)
+
         if irq_stats.raise_count == 0:
-            return
-
-        stdev = self._compute_raise_latency_stdev(irq_stats)
-
-        if math.isnan(stdev):
-            stdev = mi.Unknown()
+            min_latency = mi.Unknown()
+            avg_latency = mi.Unknown()
+            max_latency = mi.Unknown()
+            stdev_latency = mi.Unknown()
         else:
-            stdev = mi.Duration(stdev)
+            min_latency = mi.Duration(irq_stats.min_raise_latency)
+            avg_latency = irq_stats.total_raise_latency / irq_stats.raise_count
+            avg_latency = mi.Duration(avg_latency)
+            max_latency = mi.Duration(irq_stats.max_raise_latency)
+            stdev = self._compute_raise_latency_stdev(irq_stats)
 
-        raise_stats_table.append_row(
-            irq=mi.Irq(False, irq_nr, irq_stats.name),
-            count=mi.Integer(irq_stats.raise_count),
-            min_latency=mi.Duration(irq_stats.min_raise_latency),
-            avg_latency=mi.Duration(irq_stats.total_raise_latency / irq_stats.raise_count),
-            max_latency=mi.Duration(irq_stats.max_raise_latency),
-            stdev_latency=stdev,
+            if math.isnan(stdev):
+                stdev_latency = mi.Unknown()
+            else:
+                stdev_latency = mi.Duration(stdev)
+
+        soft_stats_table.append_row(
+            irq=common_row[0],
+            count=common_row[1],
+            min_duration=common_row[2],
+            avg_duration=common_row[3],
+            max_duration=common_row[4],
+            stdev_duration=common_row[5],
+            raise_count=mi.Integer(irq_stats.raise_count),
+            min_latency=min_latency,
+            avg_latency=avg_latency,
+            max_latency=max_latency,
+            stdev_latency=stdev_latency,
         )
 
     def _fill_freq_result_table(self, irq_stats, freq_table):
@@ -263,8 +302,9 @@ class IrqAnalysisCommand(Command):
             )
 
     def _fill_stats_freq_result_tables(self, begin_ns, end_ns, is_hard,
-                                       analysis_stats, filter_list, stats_table,
-                                       raise_stats_table, freq_tables):
+                                       analysis_stats, filter_list,
+                                       hard_stats_table, soft_stats_table,
+                                       freq_tables):
         for id in sorted(analysis_stats):
             if filter_list and str(id) not in filter_list:
                 continue
@@ -275,12 +315,14 @@ class IrqAnalysisCommand(Command):
                 continue
 
             if self._args.stats:
-                self._append_stats_result_table_row(is_hard, id, irq_stats,
-                                                    stats_table)
+                if is_hard:
+                    append_row_fn = self._append_hard_stats_result_table_row
+                    table = hard_stats_table
+                else:
+                    append_row_fn = self._append_soft_stats_result_table_row
+                    table = soft_stats_table
 
-                if not is_hard:
-                    self._append_raise_stats_result_table_row(id, irq_stats,
-                                                              raise_stats_table)
+                append_row_fn(id, irq_stats, table)
 
             if self._args.freq:
                 subtitle = '{} ({})'.format(irq_stats.name, id)
@@ -300,13 +342,14 @@ class IrqAnalysisCommand(Command):
         def fill_stats_freq_result_tables(is_hard, stats, filter_list):
             self._fill_stats_freq_result_tables(begin_ns, end_ns, is_hard,
                                                 stats, filter_list,
-                                                stats_table, raise_stats_table,
-                                                freq_tables)
+                                                hard_stats_table,
+                                                soft_stats_table, freq_tables)
 
-        stats_table = self._mi_create_result_table(self._MI_TABLE_CLASS_STATS,
-                                                   begin_ns, end_ns)
-        raise_stats_table = \
-            self._mi_create_result_table(self._MI_TABLE_CLASS_RAISE_STATS,
+        hard_stats_table = \
+            self._mi_create_result_table(self._MI_TABLE_CLASS_HARD_STATS,
+                                         begin_ns, end_ns)
+        soft_stats_table = \
+            self._mi_create_result_table(self._MI_TABLE_CLASS_SOFT_STATS,
                                          begin_ns, end_ns)
         freq_tables = []
 
@@ -320,7 +363,7 @@ class IrqAnalysisCommand(Command):
             fill_stats_freq_result_tables(False, self._analysis.softirq_stats,
                                           self._args.softirq_filter_list)
 
-        return stats_table, raise_stats_table, freq_tables
+        return hard_stats_table, soft_stats_table, freq_tables
 
     def _ns_to_hour_nsec(self, ts):
         return common.ns_to_hour_nsec(ts, self._args.multi_day, self._args.gmt)
@@ -430,10 +473,11 @@ class IrqAnalysisCommand(Command):
         output_str = self._get_duration_stats_str(row)
         print(output_str)
 
-    def _print_soft_irq_stats_row(self, stats_row, raise_stats_row):
-        output_str = self._get_duration_stats_str(stats_row)
-        if raise_stats_row.count.value != 0:
-            output_str += self._get_raise_latency_str(raise_stats_row)
+    def _print_soft_irq_stats_row(self, row):
+        output_str = self._get_duration_stats_str(row)
+
+        if row.raise_count.value != 0:
+            output_str += self._get_raise_latency_str(row)
 
         print(output_str)
 
@@ -462,7 +506,7 @@ class IrqAnalysisCommand(Command):
 
     def _get_raise_latency_str(self, row):
         format_str = ' {:>6} {:>12} {:>12} {:>12} {:>12}'
-        raise_count = row.count.value
+        raise_count = row.raise_count.value
         min_raise_latency = row.min_latency.to_us()
         avg_raise_latency = row.avg_latency.to_us()
         max_raise_latency = row.max_latency.to_us()
@@ -480,7 +524,8 @@ class IrqAnalysisCommand(Command):
 
         return output_str
 
-    def _print_stats_freq(self, stats_table, raise_stats_table, freq_tables):
+    def _print_stats_freq(self, hard_stats_table, soft_stats_table,
+                          freq_tables):
         hard_header_format = '{:<52} {:<12}\n' \
                              '{:<22} {:<14} {:<12} {:<12} {:<10} {:<12}\n'
         hard_header = hard_header_format.format(
@@ -498,11 +543,13 @@ class IrqAnalysisCommand(Command):
             'count', 'min', 'avg', 'max', 'stdev'
         )
         soft_header += '-' * 82 + '|' + '-' * 60
-        raise_table_index = 0
 
-        if stats_table.rows:
+        if hard_stats_table.rows or soft_stats_table.rows:
+            stats_rows = itertools.chain(hard_stats_table.rows,
+                                         soft_stats_table.rows)
+
             if freq_tables:
-                for stats_row, freq_table in zip(stats_table.rows, freq_tables):
+                for stats_row, freq_table in zip(stats_rows, freq_tables):
                     irq = stats_row.irq
 
                     if irq.is_hard:
@@ -510,9 +557,7 @@ class IrqAnalysisCommand(Command):
                         self._print_hard_irq_stats_row(stats_row)
                     else:
                         print(soft_header)
-                        raise_stats_row = raise_stats_table.rows[raise_table_index]
-                        raise_table_index += 1
-                        self._print_soft_irq_stats_row(stats_row, raise_stats_row)
+                        self._print_soft_irq_stats_row(stats_row)
 
                     # frequency table might be empty: do not print
                     if freq_table.rows:
@@ -525,7 +570,7 @@ class IrqAnalysisCommand(Command):
                 hard_header_printed = False
                 soft_header_printed = False
 
-                for stats_row in stats_table.rows:
+                for stats_row in stats_rows:
                     irq = stats_row.irq
 
                     if irq.is_hard:
@@ -536,13 +581,13 @@ class IrqAnalysisCommand(Command):
                         self._print_hard_irq_stats_row(stats_row)
                     else:
                         if not soft_header_printed:
-                            print()
+                            if hard_header_printed:
+                                print()
+
                             print(soft_header)
                             soft_header_printed = True
 
-                        raise_stats_row = raise_stats_table.rows[raise_table_index]
-                        raise_table_index += 1
-                        self._print_soft_irq_stats_row(stats_row, raise_stats_row)
+                        self._print_soft_irq_stats_row(stats_row)
 
             return
 

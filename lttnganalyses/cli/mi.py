@@ -149,6 +149,17 @@ class _DataObject:
     def to_native_object(self):
         raise NotImplementedError
 
+    def __eq__(self, other):
+        # ensure we're comparing the same type first
+        if not isinstance(other, self.__class__):
+            return False
+
+        # call specific equality method
+        return self._eq(other)
+
+    def _eq(self, other):
+        raise NotImplementedError
+
 
 class _UnstructuredDataObject(_DataObject):
     def __init__(self, value):
@@ -163,6 +174,9 @@ class _UnstructuredDataObject(_DataObject):
 
     def __repr__(self):
         return repr(self._value)
+
+    def _eq(self, other):
+        return self._value == other._value
 
 
 class _StructuredDataObject(_DataObject):
@@ -196,12 +210,18 @@ class Empty(_DataObject):
     def to_native_object(self):
         return None
 
+    def _eq(self, other):
+        return True
+
 
 class Unknown(_StructuredDataObject):
     CLASS = 'unknown'
 
     def _to_native_object(self):
         return {}
+
+    def _eq(self, other):
+        return True
 
 
 class _SimpleValue(_StructuredDataObject):
@@ -217,6 +237,9 @@ class _SimpleValue(_StructuredDataObject):
 
     def __repr__(self):
         return repr(self._value)
+
+    def _eq(self, other):
+        return self._value == other._value
 
 
 class Ratio(_SimpleValue):
@@ -282,6 +305,9 @@ class TimeRange(_StructuredDataObject):
     def _to_native_object(self):
         return {'begin': self._begin, 'end': self._end}
 
+    def _eq(self, other):
+        return (self._begin, self._end) == (other._begin, other._end)
+
 
 class Syscall(_StructuredDataObject):
     CLASS = 'syscall'
@@ -295,6 +321,9 @@ class Syscall(_StructuredDataObject):
 
     def _to_native_object(self):
         return {'name': self._name}
+
+    def _eq(self, other):
+        return self._name == other._name
 
 
 class Process(_StructuredDataObject):
@@ -331,6 +360,12 @@ class Process(_StructuredDataObject):
 
         return ret_dict
 
+    def _eq(self, other):
+        self_tuple = (self._name, self._pid, self._tid)
+        other_tuple = (other._name, other._pid, other._tid)
+
+        return self_tuple == other_tuple
+
 
 class Path(_StructuredDataObject):
     CLASS = 'path'
@@ -345,6 +380,9 @@ class Path(_StructuredDataObject):
     def _to_native_object(self):
         return {'path': self._path}
 
+    def _eq(self, other):
+        return self._path == other._path
+
 
 class Fd(_StructuredDataObject):
     CLASS = 'fd'
@@ -358,6 +396,9 @@ class Fd(_StructuredDataObject):
 
     def _to_native_object(self):
         return {'fd': self._fd}
+
+    def _eq(self, other):
+        return self._fd == other._fd
 
 
 class Irq(_StructuredDataObject):
@@ -388,6 +429,12 @@ class Irq(_StructuredDataObject):
 
         return obj
 
+    def _eq(self, other):
+        self_tuple = (self._is_hard, self._nr, self._name)
+        other_tuple = (other._is_hard, other._nr, other._name)
+
+        return self_tuple == other_tuple
+
 
 class Cpu(_StructuredDataObject):
     CLASS = 'cpu'
@@ -402,6 +449,9 @@ class Cpu(_StructuredDataObject):
     def _to_native_object(self):
         return {'id': self._id}
 
+    def _eq(self, other):
+        return self._id == other._id
+
 
 class Disk(_StructuredDataObject):
     CLASS = 'disk'
@@ -415,6 +465,9 @@ class Disk(_StructuredDataObject):
 
     def _to_native_object(self):
         return {'name': self._name}
+
+    def _eq(self, other):
+        return self._name == other._name
 
 
 def get_metadata(version, title, description, authors, url, tags,
