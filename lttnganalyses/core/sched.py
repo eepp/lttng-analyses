@@ -24,13 +24,6 @@
 from .analysis import Analysis
 
 
-class SchedEvent():
-    def __init__(self, wakeup_ts, waker, switch_ts):
-        self.wakeup_ts = wakeup_ts
-        self.waker = waker
-        self.switch_ts = switch_ts
-
-
 class SchedAnalysis(Analysis):
     def __init__(self, state, min_latency, max_latency):
         notification_cbs = {
@@ -76,7 +69,7 @@ class SchedAnalysis(Analysis):
             return
         if self._max_latency is not None and latency > self._max_latency:
             return
-        if not next_tid in self.sched_stats:
+        if next_tid not in self.sched_stats:
             self.sched_stats[next_tid] = SchedStats(process.tid, process.comm)
         self.sched_stats[next_tid].update_stats(process.last_wakeup,
                                                 process.last_waker, timestamp)
@@ -113,3 +106,10 @@ class SchedStats():
         self.max_latency = None
         self.total_latency = 0
         self.sched_list = []
+
+
+class SchedEvent():
+    def __init__(self, wakeup_ts, waker, switch_ts):
+        self.wakeup_ts = wakeup_ts
+        self.waker = waker
+        self.switch_ts = switch_ts

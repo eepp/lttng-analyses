@@ -171,8 +171,8 @@ class Command:
             subprocess.check_output('babeltrace "%s"' % self._args.path,
                                     shell=True)
         except subprocess.CalledProcessError:
-            self._gen_error('Cannot run babeltrace on the trace, cannot verify if '
-                            'events were lost during the trace recording')
+            self._gen_error('Cannot run babeltrace on the trace, cannot verify'
+                            ' if events were lost during the trace recording')
 
     def _pre_analysis(self):
         pass
@@ -285,8 +285,8 @@ class Command:
                         help='Analysis period end marker event name '
                         '(requires --period-begin)')
         ap.add_argument('--period-key', type=str, default='cpu_id',
-                        help='Optional, list of event field names used to match '
-                        'period markers (default: cpu_id)')
+                        help='Optional, list of event field names used to '
+                        'match period markers (default: cpu_id)')
         ap.add_argument('--timerange', type=str, help='time range: '
                                                       '[begin,end]')
         ap.add_argument('-V', '--version', action='version',
@@ -295,13 +295,14 @@ class Command:
         # MI mode-dependent arguments
         if self._mi_mode:
             ap.add_argument('--metadata', action='store_true',
-                            help="Show analysis's metadata")
-            ap.add_argument('path', metavar='<path/to/trace>', help='trace path',
-                            nargs='*')
+                            help='Show analysis\'s metadata')
+            ap.add_argument('path', metavar='<path/to/trace>',
+                            help='trace path', nargs='*')
         else:
             ap.add_argument('--no-progress', action='store_true',
                             help='Don\'t display the progress bar')
-            ap.add_argument('path', metavar='<path/to/trace>', help='trace path')
+            ap.add_argument('path', metavar='<path/to/trace>',
+                            help='trace path')
 
         # Used to add command-specific args
         self._add_arguments(ap)
@@ -371,7 +372,8 @@ class Command:
                                                         self._args.timerange,
                                                         self._args.gmt)
             if None in [begin_ts, end_ts]:
-                self._cmdline_error('Invalid time format: "{}"'.format(self._args.timerange))
+                self._cmdline_error(
+                    'Invalid time format: "{}"'.format(self._args.timerange))
         else:
             if self._args.begin:
                 begin_ts = date_to_epoch_nsec(self._args.begin)
@@ -406,8 +408,6 @@ class Command:
         begin_ns = kwargs['begin_ns']
         end_ns = kwargs['end_ns']
 
-        # TODO allow output of results to some other place/in other
-        # format than plain text-cli
         self._analysis_tick(begin_ns, end_ns)
         self._ticks += 1
 
