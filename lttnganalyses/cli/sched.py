@@ -22,335 +22,428 @@
 # SOFTWARE.
 
 from .command import Command
-from ..core import sched as core_sched
-from ..linuxautomaton import common, sv
+from ..core import sched
+from ..linuxautomaton import common
 from ..ascii_graph import Pyasciigraph
-
+from . import mi
 import math
 import statistics
+import sys
 
 
 class SchedAnalysisCommand(Command):
-    _DESC = """The sched latency command."""
+    _DESC = """The sched command."""
+    _ANALYSIS_CLASS = sched.SchedAnalysis
+    _MI_TITLE = 'Scheduling latencies analysis'
+    _MI_DESCRIPTION = \
+        'Scheduling latencies frequency distribution, statistics, and log'
+    _MI_TAGS = [mi.Tags.SCHED, mi.Tags.STATS, mi.Tags.FREQ, mi.Tags.LOG]
+    _MI_TABLE_CLASS_LOG = 'log'
+    _MI_TABLE_CLASS_TOTAL_STATS = 'total_stats'
+    _MI_TABLE_CLASS_PER_TID_STATS = 'per_tid_stats'
+    _MI_TABLE_CLASS_PER_PRIO_STATS = 'per_prio_stats'
+    # _MI_TABLE_CLASS_FREQ = 'freq'
+    # _MI_TABLE_CLASS_SUMMARY = 'summary'
+    _MI_TABLE_CLASSES = [
+        (
+            _MI_TABLE_CLASS_LOG,
+            'Sched switch log', [
+                ('wakeup_ts', 'Wakeup timestamp', mi.Timestamp),
+                ('switch_ts', 'Switch timestamp', mi.Timestamp),
+                ('latency', 'Scheduling latency', mi.Duration),
+                ('prio', 'Priority', mi.Integer),
+                ('wakee_proc', 'Wakee process', mi.Process),
+                ('waker_proc', 'Waker process', mi.Process),
+            ]
+        ),
+        (
+            _MI_TABLE_CLASS_TOTAL_STATS,
+            'Sched switch latency stats (total)', [
+                ('count', 'Sched switch count', mi.Integer, 'sched switches'),
+                ('min_latency', 'Minimum latency', mi.Duration),
+                ('avg_latency', 'Average latency', mi.Duration),
+                ('max_latency', 'Maximum latency', mi.Duration),
+                ('stdev_latency', 'Scheduling latency standard deviation',
+                 mi.Duration),
+            ]
+        ),
+        (
+            _MI_TABLE_CLASS_PER_TID_STATS,
+            'Sched switch latency stats (per-TID)', [
+                ('process', 'Wakee process', mi.Process),
+                ('count', 'Sched switch count', mi.Integer, 'sched switches'),
+                ('min_latency', 'Minimum latency', mi.Duration),
+                ('avg_latency', 'Average latency', mi.Duration),
+                ('max_latency', 'Maximum latency', mi.Duration),
+                ('stdev_latency', 'Scheduling latency standard deviation',
+                 mi.Duration),
+            ]
+        ),
+        (
+            _MI_TABLE_CLASS_PER_PRIO_STATS,
+            'Sched switch latency stats (per-prio)', [
+                ('prio', 'Priority', mi.Integer),
+                ('count', 'Sched switch count', mi.Integer, 'sched switches'),
+                ('min_latency', 'Minimum latency', mi.Duration),
+                ('avg_latency', 'Average latency', mi.Duration),
+                ('max_latency', 'Maximum latency', mi.Duration),
+                ('stdev_latency', 'Scheduling latency standard deviation',
+                 mi.Duration),
+            ]
+        ),
+    ]
 
-    def __init__(self):
-        super().__init__(self._add_arguments,
-                         enable_max_min_args=True,
-                         enable_freq_arg=True,
-                         enable_log_arg=True,
-                         enable_stats_arg=True)
+    def _analysis_tick(self, begin_ns, end_ns):
+        log_table = None
+        total_stats_table = None
+        per_tid_stats_table = None
+        per_prio_stats_table = None
 
-    def _validate_transform_args(self):
-        pass
+        if self._args.log:
+            log_table = self._get_log_result_table(begin_ns, end_ns)
 
-    def _default_args(self, stats, log, freq):
-        if stats:
-            self._arg_stats = True
-        if log:
-            self._arg_log = True
-        if freq:
-            self._arg_freq = True
+        if self._args.stats:
+            if self._args.total:
+                total_stats_table = self._get_total_stats_result_table(
+                    begin_ns, end_ns)
 
-    def run(self, stats=False, log=False, freq=False):
-        # parse arguments first
-        self._parse_args()
-        # validate, transform and save specific arguments
-        self._validate_transform_args()
-        # handle the default args for different executables
-        self._default_args(stats, log, freq)
-        # open the trace
-        self._open_trace()
-        # create the appropriate analysis/analyses
-        self._create_analysis()
-        # run the analysis
-        self._run_analysis(self._reset_total, self._refresh)
-        # print results
-        self._print_results(self.start_ns, self.trace_end_ts)
-        # close the trace
-        self._close_trace()
+            if self._args.per_tid:
+                per_tid_stats_table = self._get_per_tid_stats_result_table(
+                    begin_ns, end_ns)
 
-    def run_stats(self):
-        self.run(stats=True)
+            if self._args.per_prio:
+                per_prio_stats_table = self._get_per_prio_stats_result_table(
+                    begin_ns, end_ns)
 
-    def run_log(self):
-        self.run(log=True)
+        if self._mi_mode:
+            if log_table:
+                self._mi_append_result_table(log_table)
 
-    def run_freq(self):
-        self.run(freq=True)
+            if total_stats_table and total_stats_table.rows:
+                self._mi_append_result_table(total_stats_table)
 
-    def _create_analysis(self):
-        self._analysis = core_sched.SchedAnalysis(self.state, self._arg_min,
-                                                  self._arg_max)
+            if per_tid_stats_table and per_tid_stats_table.rows:
+                self._mi_append_result_table(per_tid_stats_table)
 
-    def _compute_sched_latency_stdev(self, sched_stats_item):
-        if sched_stats_item.count() < 2:
+            if per_prio_stats_table and per_prio_stats_table.rows:
+                self._mi_append_result_table(per_prio_stats_table)
+        else:
+            self._print_date(begin_ns, end_ns)
+
+            if self._args.stats:
+                if total_stats_table:
+                    self._print_total_stats(total_stats_table)
+                if per_tid_stats_table:
+                    self._print_per_tid_stats(per_tid_stats_table)
+                if per_prio_stats_table:
+                    self._print_per_prio_stats(per_prio_stats_table)
+
+                if log_table:
+                    print()
+
+            if log_table:
+                self._print_log(log_table)
+
+    def _get_log_result_table(self, begin_ns, end_ns):
+        result_table = self._mi_create_result_table(self._MI_TABLE_CLASS_LOG,
+                                                    begin_ns, end_ns)
+
+        for sched_event in self._analysis.sched_list:
+            wakee_proc = mi.Process(sched_event.wakee_proc.comm,
+                                    sched_event.wakee_proc.pid,
+                                    sched_event.wakee_proc.tid)
+
+            if sched_event.waker_proc:
+                waker_proc = mi.Process(sched_event.waker_proc.comm,
+                                        sched_event.waker_proc.pid,
+                                        sched_event.waker_proc.tid)
+            else:
+                waker_proc = mi.Empty()
+
+            result_table.append_row(
+                wakeup_ts=mi.Timestamp(sched_event.wakeup_ts),
+                switch_ts=mi.Timestamp(sched_event.switch_ts),
+                latency=mi.Duration(sched_event.latency),
+                prio=mi.Integer(sched_event.prio),
+                wakee_proc=wakee_proc,
+                waker_proc=waker_proc,
+            )
+
+        return result_table
+
+    def _get_total_stats_result_table(self, begin_ns, end_ns):
+        stats_table = \
+            self._mi_create_result_table(self._MI_TABLE_CLASS_TOTAL_STATS,
+                                         begin_ns, end_ns)
+
+        stdev = self._compute_sched_latency_stdev(self._analysis.sched_list)
+        if math.isnan(stdev):
+            stdev = mi.Unknown()
+        else:
+            stdev = mi.Duration(stdev)
+
+        stats_table.append_row(
+            count=mi.Integer(self._analysis.count),
+            min_latency=mi.Duration(self._analysis.min_latency),
+            avg_latency=mi.Duration(self._analysis.total_latency /
+                                    self._analysis.count),
+            max_latency=mi.Duration(self._analysis.max_latency),
+            stdev_latency=stdev,
+        )
+
+        return stats_table
+
+    def _get_per_tid_stats_result_table(self, begin_ns, end_ns):
+        stats_table = \
+            self._mi_create_result_table(self._MI_TABLE_CLASS_PER_TID_STATS,
+                                         begin_ns, end_ns)
+
+        for tid in self._analysis.tids:
+            tid_stats = self._analysis.tids[tid]
+            if not tid_stats.sched_list:
+                continue
+
+            stdev = self._compute_sched_latency_stdev(tid_stats.sched_list)
+            if math.isnan(stdev):
+                stdev = mi.Unknown()
+            else:
+                stdev = mi.Duration(stdev)
+
+            stats_table.append_row(
+                process=mi.Process(tid=tid, name=tid_stats.comm),
+                count=mi.Integer(tid_stats.count),
+                min_latency=mi.Duration(tid_stats.min_latency),
+                avg_latency=mi.Duration(tid_stats.total_latency /
+                                        tid_stats.count),
+                max_latency=mi.Duration(tid_stats.max_latency),
+                stdev_latency=stdev,
+            )
+
+        return stats_table
+
+    def _get_per_prio_stats_result_table(self, begin_ns, end_ns):
+        stats_table = \
+            self._mi_create_result_table(self._MI_TABLE_CLASS_PER_PRIO_STATS,
+                                         begin_ns, end_ns)
+
+        prio_sched_lists = {}
+        for sched_event in self._analysis.sched_list:
+            if sched_event.prio not in prio_sched_lists:
+                prio_sched_lists[sched_event.prio] = []
+
+            prio_sched_lists[sched_event.prio].append(sched_event)
+
+        for prio in prio_sched_lists:
+            sched_list = prio_sched_lists[prio]
+            if not sched_list:
+                continue
+
+            stdev = self._compute_sched_latency_stdev(sched_list)
+            if math.isnan(stdev):
+                stdev = mi.Unknown()
+            else:
+                stdev = mi.Duration(stdev)
+
+            latencies = [sched.latency for sched in sched_list]
+            count = len(latencies)
+            min_latency = min(latencies)
+            max_latency = max(latencies)
+            total_latency = sum(latencies)
+
+            stats_table.append_row(
+                prio=mi.Integer(prio),
+                count=mi.Integer(count),
+                min_latency=mi.Duration(min_latency),
+                avg_latency=mi.Duration(total_latency / count),
+                max_latency=mi.Duration(max_latency),
+                stdev_latency=stdev,
+            )
+
+        return stats_table
+
+    def _compute_sched_latency_stdev(self, sched_events):
+        if len(sched_events) < 2:
             return float('nan')
 
         sched_latencies = []
-        for sched_event in sched_stats_item.sched_list:
-            sched_latencies.append(sched_event.switch_ts -
-                sched_event.wakeup_ts
+        for sched_event in sched_events:
+            sched_latencies.append(sched_event.latency)
 
         return statistics.stdev(sched_latencies)
 
-    def _print_frequency_distribution(self, sched_stats_item, id):
-        # The number of bins for the histogram
-        resolution = self._arg_freq_resolution
+    def _ns_to_hour_nsec(self, ts):
+        return common.ns_to_hour_nsec(ts, self._args.multi_day, self._args.gmt)
 
-        if self._arg_min is not None:
-            min_latency = self._arg_min
-        else:
-            min_latency = sched_stats_item.min_latency
-            # ns to µs
-            min_latency /= 1000
+    def _print_log(self, result_table):
+        fmt = '[{:<18}, {:<18}] {:>15} {:>10} {:<25}  {:<25}'
+        title_fmt = '{:<20} {:<19} {:>15} {:>10} {:<25}  {:<25}'
+        print(title_fmt.format('Wakeup', 'Switch', 'Latency (us)', 'Priority',
+                               'Wakee', 'Waker'))
+        for row in result_table.rows:
+            wakeup_ts = row.wakeup_ts.value
+            switch_ts = row.switch_ts.value
+            latency = row.latency.value
+            prio = row.prio.value
+            wakee_proc = row.wakee_proc
+            waker_proc = row.waker_proc
 
-        if self._arg_max is not None:
-            max_latency = self._arg_max
-        else:
-            max_latency = sched_stats_item.max_latency
-            # ns to µs
-            max_latency /= 1000
+            wakee_str = '%s (%d)' % (wakee_proc.name, wakee_proc.tid)
+            if isinstance(waker_proc, mi.Empty):
+                waker_str = 'Unknown (N/A)'
+            else:
+                waker_str = '%s (%d)' % (waker_proc.name, waker_proc.tid)
 
-        step = (max_latency - min_latency) / resolution
-        if step == 0:
-            return
+            print(fmt.format(self._ns_to_hour_nsec(wakeup_ts),
+                             self._ns_to_hour_nsec(switch_ts),
+                             '%0.03f' % (latency / 1000), prio,
+                             wakee_str, waker_str))
 
-        buckets = []
-        values = []
-        graph = Pyasciigraph()
-        for i in range(resolution):
-            buckets.append(i * step)
-            values.append(0)
-        for sched_event in sched_stats_item.sched_list:
-            latency = (sched_event.switch_ts - sched_event.wakeup_ts) / 1000
-            index = min(int((latency - min_latency) / step), resolution - 1)
-            values[index] += 1
-
-        graph_data = []
-        for index, value in enumerate(values):
-            # The graph data format is a tuple (info, value). Here info
-            # is the lower bound of the bucket, value the bucket's count
-            graph_data.append(('%0.03f' % (index * step + min_latency),
-                               value))
-
-        graph_lines = graph.graph(
-            'Scheduling latency frequency distribution %s (%s) (usec)' %
-            (sched_stats_item.name, id),
-            graph_data,
-            info_before=True,
-            count=True
+    def _print_total_stats(self, stats_table):
+        row_format = '{:<12} {:<12} {:<12} {:<12} {:<12}'
+        header = row_format.format(
+            'Count', 'Min', 'Avg', 'Max', 'Stdev'
         )
 
-        for line in graph_lines:
-            print(line)
-
-#    def _filter_irq(self, irq):
-#        if type(irq) is sv.HardIRQ:
-#            if self._arg_irq_filter_list:
-#                return str(irq.id) in self._arg_irq_filter_list
-#            if self._arg_softirq_filter_list:
-#                return False
-#        else:  # SoftIRQ
-#            if self._arg_softirq_filter_list:
-#                return str(irq.id) in self._arg_softirq_filter_list
-#            if self._arg_irq_filter_list:
-#                return False
-#
-#        return True
-
-    def _print_sched_log(self):
-        fmt = '[{:<18}, {:<18}] {:>15} {:>4}  {:<9} {:>4}  {:<22}'
-        title_fmt = '{:<20} {:<19} {:>15} {:>4}  {:<9} {:>4}  {:<22}'
-        print(title_fmt.format('Begin', 'End', 'Latency (us)', 'CPU',
-                               'Type', '#', 'Name'))
-        for irq in self._analysis.sched_list:
-            if not self._filter_irq(irq):
-                continue
-
-            raise_ts = ''
-            if type(irq) is sv.HardIRQ:
-                name = self._analysis.hard_sched_stats[irq.id].name
-                irqtype = 'IRQ'
-            else:
-                name = self._analysis.softsched_stats[irq.id].name
-                irqtype = 'SoftIRQ'
-                if irq.raise_ts is not None:
-                    raise_ts = ' (raised at %s)' % \
-                               (common.ns_to_hour_nsec(irq.raise_ts,
-                                                       self._arg_multi_day,
-                                                       self._arg_gmt))
-
-            print(fmt.format(common.ns_to_hour_nsec(irq.begin_ts,
-                                                    self._arg_multi_day,
-                                                    self._arg_gmt),
-                             common.ns_to_hour_nsec(irq.end_ts,
-                                                    self._arg_multi_day,
-                                                    self._arg_gmt),
-                             '%0.03f' % ((irq.end_ts - irq.begin_ts) / 1000),
-                             '%d' % irq.cpu_id, irqtype, irq.id,
-                             name + raise_ts))
-
-    def _print_sched_stats(self, sched_stats, filter_list, header):
-        header_printed = False
-        for id in sorted(sched_stats):
-            if filter_list and str(id) not in filter_list:
-                continue
-
-            sched_stats_item = sched_stats[id]
-            if sched_stats_item.count == 0:
-                continue
-
-            if self._arg_stats:
-                if self._arg_freq or not header_printed:
-                    print(header)
-                    header_printed = True
-
-                if type(sched_stats_item) is core_sched.HardIrqStats:
-                    self._print_hard_sched_stats_item(sched_stats_item, id)
+        if stats_table.rows:
+            print()
+            print(stats_table.title + ' (us)')
+            print(header)
+            for row in stats_table.rows:
+                if type(row.stdev_latency) is mi.Unknown:
+                    stdev_str = '?'
                 else:
-                    self._print_soft_sched_stats_item(sched_stats_item, id)
+                    stdev_str = '%0.03f' % row.stdev_latency.to_us()
 
-            if self._arg_freq:
-                self._print_frequency_distribution(sched_stats_item, id)
+                row_str = row_format.format(
+                    '%d' % row.count.value,
+                    '%0.03f' % row.min_latency.to_us(),
+                    '%0.03f' % row.avg_latency.to_us(),
+                    '%0.03f' % row.max_latency.to_us(),
+                    '%s' % stdev_str,
+                )
 
-        print()
+                print(row_str)
 
-    def _print_hard_sched_stats_item(self, sched_stats_item, id):
-        output_str = self._get_latency_stats_str(sched_stats_item, id)
-        print(output_str)
+    def _print_per_tid_stats(self, stats_table):
+        row_format = '{:<25} {:>8}  {:>12}  {:>12}  {:>12}  {:>12}'
+        header = row_format.format(
+            'Process', 'Count', 'Min', 'Avg', 'Max', 'Stdev'
+        )
 
-    def _print_soft_sched_stats_item(self, sched_stats_item, id):
-        output_str = self._get_latency_stats_str(sched_stats_item, id)
-        if sched_stats_item.raise_count != 0:
-            output_str += self._get_sched_latency_str(sched_stats_item, id)
+        if stats_table.rows:
+            print()
+            print(stats_table.title + ' (us)')
+            print(header)
+            for row in stats_table.rows:
+                if type(row.stdev_latency) is mi.Unknown:
+                    stdev_str = '?'
+                else:
+                    stdev_str = '%0.03f' % row.stdev_latency.to_us()
 
-        print(output_str)
+                proc = row.process
+                proc_str = '%s (%d)' % (proc.name, proc.tid)
 
-    def _get_latency_stats_str(self, sched_stats_item, id):
-        format_str = '{:<3} {:<18} {:>5} {:>12} {:>12} {:>12} {:>12} {:<2}'
+                row_str = row_format.format(
+                    '%s' % proc_str,
+                    '%d' % row.count.value,
+                    '%0.03f' % row.min_latency.to_us(),
+                    '%0.03f' % row.avg_latency.to_us(),
+                    '%0.03f' % row.max_latency.to_us(),
+                    '%s' % stdev_str,
+                )
 
-        avg_latency = sched_stats_item.total_latency / sched_stats_item.count
-        latency_stdev = self._compute_latency_stdev(sched_stats_item) #XXX
-        min_latency = sched_stats_item.min_latency
-        max_latency = sched_stats_item.max_latency
-        # ns to µs
-        avg_latency /= 1000
-        latency_stdev /= 1000
-        min_latency /= 1000
-        max_latency /= 1000
+                print(row_str)
 
-        if math.isnan(latency_stdev):
-            latency_stdev_str = '?'
-        else:
-            latency_stdev_str = '%0.03f' % latency_stdev
+    def _print_per_prio_stats(self, stats_table):
+        row_format = '{:>4} {:>8}  {:>12}  {:>12}  {:>12}  {:>12}'
+        header = row_format.format(
+            'Prio', 'Count', 'Min', 'Avg', 'Max', 'Stdev'
+        )
 
-        output_str = format_str.format('%d:' % id,
-                                       '<%s>' % sched_stats_item.name,
-                                       '%d' % sched_stats_item.count,
-                                       '%0.03f' % min_latency,
-                                       '%0.03f' % avg_latency,
-                                       '%0.03f' % max_latency,
-                                       '%s' % latency_stdev_str,
-                                       ' |')
-        return output_str
+        if stats_table.rows:
+            print()
+            print(stats_table.title + ' (us)')
+            print(header)
+            for row in stats_table.rows:
+                if type(row.stdev_latency) is mi.Unknown:
+                    stdev_str = '?'
+                else:
+                    stdev_str = '%0.03f' % row.stdev_latency.to_us()
 
-    def _get_sched_latency_str(self, sched_stats_item, id):
-        format_str = ' {:>6} {:>12} {:>12} {:>12} {:>12}'
+                row_str = row_format.format(
+                    '%d' % row.prio.value,
+                    '%d' % row.count.value,
+                    '%0.03f' % row.min_latency.to_us(),
+                    '%0.03f' % row.avg_latency.to_us(),
+                    '%0.03f' % row.max_latency.to_us(),
+                    '%s' % stdev_str,
+                )
 
-        avg_sched_latency = (sched_stats_item.total_sched_latency /
-                             sched_stats_item.raise_count)
-        sched_latency_stdev = self._compute_sched_latency_stdev(
-                sched_stats_item)
-        min_sched_latency = sched_stats_item.min_sched_latency
-        max_sched_latency = sched_stats_item.max_sched_latency
-        # ns to µs
-        avg_sched_latency /= 1000
-        sched_latency_stdev /= 1000
-        min_sched_latency /= 1000
-        max_sched_latency /= 1000
+                print(row_str)
 
-        if math.isnan(sched_latency_stdev):
-            sched_latency_stdev_str = '?'
-        else:
-            sched_latency_stdev_str = '%0.03f' % sched_latency_stdev
-
-        output_str = format_str.format(sched_stats_item.raise_count,
-                                       '%0.03f' % min_sched_latency,
-                                       '%0.03f' % avg_sched_latency,
-                                       '%0.03f' % max_sched_latency,
-                                       '%s' % sched_latency_stdev_str)
-        return output_str
-
-    def _print_results(self, begin_ns, end_ns):
-        if self._arg_stats or self._arg_freq:
-            self._print_stats(begin_ns, end_ns)
-        if self._arg_log:
-            self._print_irq_log()
-
-    def _print_stats(self, begin_ns, end_ns):
-        self._print_date(begin_ns, end_ns)
-
-        if self._arg_irq_filter_list is not None or \
-           self._arg_softirq_filter_list is None:
-            header_format = '{:<52} {:<12}\n' \
-                            '{:<22} {:<14} {:<12} {:<12} {:<10} {:<12}\n'
-            header = header_format.format(
-                'Hard IRQ', 'Duration (us)',
-                '', 'count', 'min', 'avg', 'max', 'stdev'
-            )
-            header += ('-' * 82 + '|')
-            self._print_sched_stats(self._analysis.hard_sched_stats,
-                                  self._arg_irq_filter_list,
-                                  header)
-
-        if self._arg_softirq_filter_list is not None or \
-           self._arg_irq_filter_list is None:
-            header_format = '{:<52} {:<52} {:<12}\n' \
-                            '{:<22} {:<14} {:<12} {:<12} {:<10} {:<4} ' \
-                            '{:<3} {:<14} {:<12} {:<12} {:<10} {:<12}\n'
-            header = header_format.format(
-                'Soft IRQ', 'Duration (us)',
-                'Raise latency (us)', '',
-                'count', 'min', 'avg', 'max', 'stdev', ' |',
-                'count', 'min', 'avg', 'max', 'stdev'
-            )
-            header += '-' * 82 + '|' + '-' * 60
-            self._print_sched_stats(self._analysis.softsched_stats,
-                                  self._arg_softirq_filter_list,
-                                  header)
-
-    def _reset_total(self, start_ts):
-        self._analysis.reset()
-
-    def _refresh(self, begin, end):
-        self._print_results(begin, end)
-        self._reset_total(end)
+    def _validate_transform_args(self, args):
+        # If neither --total nor --per-prio are specified, default
+        # to --per-tid
+        if not (args.total or args.per_prio):
+            args.per_tid = True
 
     def _add_arguments(self, ap):
-        ap.add_argument('--irq', type=str, default=None,
-                        help='Show results only for the list of IRQ')
-        ap.add_argument('--softirq', type=str, default=None,
-                        help='Show results only for the list of '
-                             'SoftIRQ')
+        Command._add_min_max_args(ap)
+        Command._add_freq_args(
+            ap, help='Output the frequency distribution of sched switch '
+            'latencies')
+        Command._add_log_args(
+            ap, help='Output the sched switches in chronological order')
+        Command._add_stats_args(ap, help='Output sched switch statistics')
+        ap.add_argument('--total', action='store_true',
+                        help='Group all results (applies to stats and freq)')
+        ap.add_argument('--per-tid', action='store_true',
+                        help='Group results per-TID (applies to stats and '
+                        'freq) (default)')
+        ap.add_argument('--per-prio', action='store_true',
+                        help='Group results per-prio (applies to stats and '
+                        'freq)')
 
 
-# entry point
+def _run(mi_mode):
+    schedcmd = SchedAnalysisCommand(mi_mode=mi_mode)
+    schedcmd.run()
+
+
+def _runstats(mi_mode):
+    sys.argv.insert(1, '--stats')
+    _run(mi_mode)
+
+
+def _runlog(mi_mode):
+    sys.argv.insert(1, '--log')
+    _run(mi_mode)
+
+
+def _runfreq(mi_mode):
+    sys.argv.insert(1, '--freq')
+    _run(mi_mode)
+
+
 def runstats():
-    # create command
-    schedcmd = SchedAnalysisCommand()
-    # execute command
-    schedcmd.run_stats()
+    _runstats(mi_mode=False)
 
 
 def runlog():
-    # create command
-    schedcmd = SchedAnalysisCommand()
-    # execute command
-    schedcmd.run_log()
+    _runlog(mi_mode=False)
 
 
 def runfreq():
-    # create command
-    schedcmd = SchedAnalysisCommand()
-    # execute command
-    schedcmd.run_freq()
+    _runfreq(mi_mode=False)
+
+
+def runstats_mi():
+    _runstats(mi_mode=True)
+
+
+def runlog_mi():
+    _runlog(mi_mode=True)
+
+
+def runfreq_mi():
+    _runfreq(mi_mode=True)

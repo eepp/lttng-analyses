@@ -25,54 +25,75 @@ from .analysis import Analysis
 
 
 class SchedAnalysis(Analysis):
-    def __init__(self, state, min_latency, max_latency):
+    def __init__(self, state, conf):
         notification_cbs = {
             'sched_switch_per_tid': self._process_sched_switch,
         }
 
-        self._state = state
+        super().__init__(state, conf)
         self._state.register_notification_cbs(notification_cbs)
-        self._min_latency = min_latency
-        self._max_latency = max_latency
-        # µs to ns
-        if self._min_latency is not None:
-            self._min_latency *= 1000
-        if self._max_latency is not None:
-            self._max_latency *= 1000
 
         # Log of individual wake scheduling events
         self.sched_list = []
-        # Index scheduling latencies by tid
-        self.sched_stats = {}
+        # Scheduling latency stats indexed by TID
+        self.tids = {}
+        # Stats
+        self.min_latency = None
+        self.max_latency = None
+        self.total_latency = 0
 
-    def process_event(self, ev):
-        pass
+    @property
+    def count(self):
+        return len(self.sched_list)
 
     def reset(self):
         self.sched_list = []
+        self.min_latency = None
+        self.max_latency = None
+        self.total_latency = 0
+        for tid in self.tids:
+            self.tids[tid].reset()
 
     def _process_sched_switch(self, **kwargs):
-        timestamp = kwargs['timestamp']
-        prev_tid = kwargs['prev_tid']
+        switch_ts = kwargs['timestamp']
+        wakeup_ts = kwargs['wakeup_ts']
+        wakee_proc = kwargs['wakee_proc']
+        waker_proc = kwargs['waker_proc']
         next_tid = kwargs['next_tid']
-        next_comm = kwargs['next_comm']
+        next_prio = kwargs['next_prio']
+
+        if wakeup_ts is None:
+            return
+
+        latency = switch_ts - wakeup_ts
+        if self._conf.min_duration is not None and \
+           latency < self._conf.min_duration:
+            return
+        if self._conf.max_duration is not None and \
+           latency > self._conf.max_duration:
+            return
+
+        if waker_proc is not None and waker_proc.tid not in self.tids:
+            self.tids[waker_proc.tid] = \
+                SchedStats.new_from_process(waker_proc)
 
         if next_tid not in self.tids:
-            return
+            self.tids[next_tid] = SchedStats.new_from_process(wakee_proc)
 
-        process = self.tids[next_tid]
-        if process.last_wakeup is None:
-            return
+        sched_event = SchedEvent(wakeup_ts, switch_ts, wakee_proc, waker_proc,
+                                 next_prio)
+        self.tids[next_tid].update_stats(sched_event)
+        self._update_stats(sched_event)
 
-        latency = timestamp - process.last_wakeup
-        if self._min_latency is not None and latency < self._min_latency:
-            return
-        if self._max_latency is not None and latency > self._max_latency:
-            return
-        if next_tid not in self.sched_stats:
-            self.sched_stats[next_tid] = SchedStats(process.tid, process.comm)
-        self.sched_stats[next_tid].update_stats(process.last_wakeup,
-                                                process.last_waker, timestamp)
+    def _update_stats(self, sched_event):
+        if self.min_latency is None or sched_event.latency < self.min_latency:
+            self.min_latency = sched_event.latency
+
+        if self.max_latency is None or sched_event.latency > self.max_latency:
+            self.max_latency = sched_event.latency
+
+        self.total_latency += sched_event.latency
+        self.sched_list.append(sched_event)
 
 
 class SchedStats():
@@ -84,21 +105,22 @@ class SchedStats():
         self.total_latency = 0
         self.sched_list = []
 
+    @classmethod
+    def new_from_process(cls, proc):
+        return cls(proc.tid, proc.comm)
+
     @property
     def count(self):
         return len(self.sched_list)
 
-    def update_stats(self, wakeup, waker, switch):
-        latency = switch - wakeup
+    def update_stats(self, sched_event):
+        if self.min_latency is None or sched_event.latency < self.min_latency:
+            self.min_latency = sched_event.latency
 
-        if self.min_latency is None or latency < self.min_latency:
-            self.min_latency = latency
+        if self.max_latency is None or sched_event.latency > self.max_latency:
+            self.max_latency = sched_event.latency
 
-        if self.max_latency is None or latency > self.max_latency:
-            self.max_latency = latency
-
-        self.total_latency += latency
-        sched_event = SchedEvent(wakeup, waker, switch)
+        self.total_latency += sched_event.latency
         self.sched_list.append(sched_event)
 
     def reset(self):
@@ -109,7 +131,10 @@ class SchedStats():
 
 
 class SchedEvent():
-    def __init__(self, wakeup_ts, waker, switch_ts):
+    def __init__(self, wakeup_ts, switch_ts, wakee_proc, waker_proc, prio):
         self.wakeup_ts = wakeup_ts
-        self.waker = waker
         self.switch_ts = switch_ts
+        self.wakee_proc = wakee_proc
+        self.waker_proc = waker_proc
+        self.prio = prio
+        self.latency = switch_ts - wakeup_ts

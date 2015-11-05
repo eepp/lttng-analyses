@@ -141,7 +141,7 @@ class IrqAnalysisCommand(Command):
             self._mi_get_result_tables(self._MI_TABLE_CLASS_HARD_STATS)
         soft_stats_tables = \
             self._mi_get_result_tables(self._MI_TABLE_CLASS_SOFT_STATS)
-        assert len(hard_stats_table) == len(soft_stats_tables)
+        assert len(hard_stats_tables) == len(soft_stats_tables)
         begin = hard_stats_tables[0].timerange.begin
         end = hard_stats_tables[-1].timerange.end
         summary_table = \
