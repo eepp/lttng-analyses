@@ -237,7 +237,7 @@ class Command:
 
         if hasattr(args, 'tid'):
             if args.tid:
-                self._analysis_conf.tid_list = args.pid.split(',')
+                self._analysis_conf.tid_list = args.tid.split(',')
                 self._analysis_conf.tid_list = [int(tid) for tid in
                                                 self._analysis_conf.tid_list]
 
