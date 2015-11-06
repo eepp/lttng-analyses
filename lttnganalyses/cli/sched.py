@@ -251,8 +251,10 @@ class SchedAnalysisCommand(Command):
             self._mi_create_result_table(self._MI_TABLE_CLASS_PER_TID_STATS,
                                          begin_ns, end_ns)
 
-        for tid in self._analysis.tids:
-            tid_stats = self._analysis.tids[tid]
+        tid_stats_list = sorted(list(self._analysis.tids.values()),
+                                key=operator.attrgetter('comm'))
+
+        for tid_stats in tid_stats_list:
             if not tid_stats.sched_list:
                 continue
 
@@ -263,7 +265,7 @@ class SchedAnalysisCommand(Command):
                 stdev = mi.Duration(stdev)
 
             stats_table.append_row(
-                process=mi.Process(tid=tid, name=tid_stats.comm),
+                process=mi.Process(tid=tid_stats.tid, name=tid_stats.comm),
                 count=mi.Integer(tid_stats.count),
                 min_latency=mi.Duration(tid_stats.min_latency),
                 avg_latency=mi.Duration(tid_stats.total_latency /
@@ -286,7 +288,7 @@ class SchedAnalysisCommand(Command):
 
             prio_sched_lists[sched_event.prio].append(sched_event)
 
-        for prio in prio_sched_lists:
+        for prio in sorted(prio_sched_lists):
             sched_list = prio_sched_lists[prio]
             if not sched_list:
                 continue
