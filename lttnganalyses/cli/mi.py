@@ -59,7 +59,9 @@ class ColumnDescription:
 
 
 class TableClass:
-    def __init__(self, name, title, column_descriptions_tuples):
+    def __init__(self, name, title, column_descriptions_tuples=[],
+                 inherit=None):
+        self._inherit = inherit
         self._name = name
         self._title = title
         self._column_descriptions = []
@@ -85,13 +87,20 @@ class TableClass:
         return self._title
 
     def to_native_object(self):
+        obj = {}
         column_descrs = self._column_descriptions
         native_column_descrs = [c.to_native_object() for c in column_descrs]
 
-        return {
-            'title': self._title,
-            'column-descriptions': native_column_descrs,
-        }
+        if self._inherit is not None:
+            obj['inherit'] = self._inherit
+
+        if self._title is not None:
+            obj['title'] = self._title
+
+        if native_column_descrs:
+            obj['column-descriptions'] = native_column_descrs
+
+        return obj
 
     def get_column_named_tuple(self):
         keys = [cd.key for cd in self._column_descriptions]
@@ -138,8 +147,15 @@ class ResultTable:
         }
         row_objs = []
 
-        if self._subtitle is not None:
-            obj['subtitle'] = self._subtitle
+        if self._table_class.name:
+            if self._subtitle is not None:
+                full_title = '{} [{}]'.format(self.title, self._subtitle)
+                table_class = TableClass(None, full_title,
+                                         inherit=self._table_class.name)
+                self._table_class = table_class
+
+        if self._table_class.name is None:
+            obj['class'] = self._table_class.to_native_object()
 
         for row in self._rows:
             row_obj = []
