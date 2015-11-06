@@ -31,6 +31,8 @@ class AnalysisConfig:
         self.end_ts = None
         self.min_duration = None
         self.max_duration = None
+        self.proc_list = None
+        self.tid_list = None
 
 
 class Analysis:
@@ -173,3 +175,12 @@ class Analysis:
                 return None
 
         return tuple(key_values)
+
+    def _filter_process(self, proc):
+        if not proc:
+            return True
+        if self._conf.proc_list and proc.comm not in self._conf.proc_list:
+            return False
+        if self._conf.tid_list and proc.tid not in self._conf.tid_list:
+            return False
+        return True

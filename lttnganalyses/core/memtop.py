@@ -41,6 +41,9 @@ class Memtop(Analysis):
 
     def _process_tid_page_alloc(self, **kwargs):
         proc = kwargs['proc']
+        if not self._filter_process(proc):
+            return
+
         tid = proc.tid
         if tid not in self.tids:
             self.tids[tid] = ProcessMemStats.new_from_process(proc)
@@ -49,6 +52,9 @@ class Memtop(Analysis):
 
     def _process_tid_page_free(self, **kwargs):
         proc = kwargs['proc']
+        if not self._filter_process(proc):
+            return
+
         tid = proc.tid
         if tid not in self.tids:
             self.tids[tid] = ProcessMemStats.new_from_process(proc)
