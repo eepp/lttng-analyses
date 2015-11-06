@@ -523,8 +523,7 @@ class IoAnalysisCommand(Command):
                                       result_table)
 
     def _fill_file_usage_result_tables(self, read_table, write_table):
-        files = self._analysis.get_files_stats(self._args.pid_list,
-                                               self._args.proc_list)
+        files = self._analysis.get_files_stats()
         self._fill_file_read_usage_result_table(files, read_table)
         self._fill_file_write_usage_result_table(files, write_table)
 

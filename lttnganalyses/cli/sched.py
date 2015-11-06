@@ -193,7 +193,7 @@ class SchedAnalysisCommand(Command):
         return result_table
 
     def _get_top_result_table(self, begin_ns, end_ns):
-        result_table = self._mi_create_result_table(self._MI_TABLE_CLASS_LOG,
+        result_table = self._mi_create_result_table(self._MI_TABLE_CLASS_TOP    ,
                                                     begin_ns, end_ns)
 
         top_events = sorted(self._analysis.sched_list,
@@ -514,7 +514,7 @@ def runlog_mi():
 
 
 def runtop_mi():
-    _runlog(mi_mode=True)
+    _runtop(mi_mode=True)
 
 
 def runfreq_mi():

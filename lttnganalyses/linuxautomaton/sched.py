@@ -174,7 +174,8 @@ class SchedStateProvider(sp.StateProvider):
             self._state.send_notification_cb('create_fd',
                                              fd=fd,
                                              parent_proc=child_proc,
-                                             timestamp=event.timestamp)
+                                             timestamp=event.timestamp,
+                                             cpu_id=event['cpu_id'])
 
         self._state.tids[child_tid] = child_proc
 
@@ -200,5 +201,6 @@ class SchedStateProvider(sp.StateProvider):
             self._state.send_notification_cb('close_fd',
                                              fd=fd,
                                              parent_proc=proc,
-                                             timestamp=event.timestamp)
+                                             timestamp=event.timestamp,
+                                             cpu_id=event['cpu_id'])
             del proc.fds[fd]

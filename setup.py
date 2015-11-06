@@ -95,6 +95,7 @@ setup(
             'lttng-irqstats = lttnganalyses.cli.irq:runstats',
             'lttng-memtop = lttnganalyses.cli.memtop:run',
             'lttng-syscallstats = lttnganalyses.cli.syscallstats:run',
+            'lttng-schedlog = lttnganalyses.cli.sched:runlog',
             'lttng-schedtop = lttnganalyses.cli.sched:runtop',
             'lttng-schedstats = lttnganalyses.cli.sched:runstats',
 
