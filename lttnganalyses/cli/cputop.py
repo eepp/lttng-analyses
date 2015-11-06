@@ -87,9 +87,7 @@ class Cputop(Command):
         if self._mi_mode:
             self._mi_append_result_table(per_tid_table)
             self._mi_append_result_table(per_cpu_table)
-
-            if total_table:
-                self._mi_append_result_table(total_table)
+            self._mi_append_result_table(total_table)
         else:
             self._print_date(begin_ns, end_ns)
             self._print_per_tid_usage(per_tid_table)

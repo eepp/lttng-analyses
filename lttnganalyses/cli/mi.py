@@ -28,6 +28,7 @@ class Tags:
     MEMORY = 'memory'
     INTERRUPT = 'interrupt'
     SYSCALL = 'syscall'
+    IO = 'io'
     TOP = 'top'
     STATS = 'stats'
     FREQ = 'freq'
@@ -79,6 +80,10 @@ class TableClass:
     def name(self):
         return self._name
 
+    @property
+    def title(self):
+        return self._title
+
     def to_native_object(self):
         column_descrs = self._column_descriptions
         native_column_descrs = [c.to_native_object() for c in column_descrs]
@@ -109,6 +114,10 @@ class ResultTable:
     @property
     def timerange(self):
         return self._timerange
+
+    @property
+    def title(self):
+        return self._table_class.title
 
     @property
     def subtitle(self):
@@ -172,8 +181,8 @@ class _UnstructuredDataObject(_DataObject):
     def to_native_object(self):
         return self._value
 
-    def __repr__(self):
-        return repr(self._value)
+    def __str__(self):
+        return str(self._value)
 
     def _eq(self, other):
         return self._value == other._value
@@ -223,6 +232,9 @@ class Unknown(_StructuredDataObject):
     def _eq(self, other):
         return True
 
+    def __str__(self):
+        return '?'
+
 
 class _SimpleValue(_StructuredDataObject):
     def __init__(self, value):
@@ -235,11 +247,29 @@ class _SimpleValue(_StructuredDataObject):
     def _to_native_object(self):
         return {'value': self._value}
 
-    def __repr__(self):
-        return repr(self._value)
+    def __str__(self):
+        return str(self._value)
 
     def _eq(self, other):
         return self._value == other._value
+
+
+class _SimpleName(_StructuredDataObject):
+    def __init__(self, name):
+        self._name = name
+
+    @property
+    def name(self):
+        return self._name
+
+    def _to_native_object(self):
+        return {'name': self._name}
+
+    def __str__(self):
+        return self._name
+
+    def _eq(self, other):
+        return self._name == other._name
 
 
 class Ratio(_SimpleValue):
@@ -309,21 +339,8 @@ class TimeRange(_StructuredDataObject):
         return (self._begin, self._end) == (other._begin, other._end)
 
 
-class Syscall(_StructuredDataObject):
+class Syscall(_SimpleName):
     CLASS = 'syscall'
-
-    def __init__(self, name):
-        self._name = name
-
-    @property
-    def name(self):
-        return self._name
-
-    def _to_native_object(self):
-        return {'name': self._name}
-
-    def _eq(self, other):
-        return self._name == other._name
 
 
 class Process(_StructuredDataObject):
@@ -453,21 +470,16 @@ class Cpu(_StructuredDataObject):
         return self._id == other._id
 
 
-class Disk(_StructuredDataObject):
+class Disk(_SimpleName):
     CLASS = 'disk'
 
-    def __init__(self, name):
-        self._name = name
 
-    @property
-    def name(self):
-        return self._name
+class Partition(_SimpleName):
+    CLASS = 'part'
 
-    def _to_native_object(self):
-        return {'name': self._name}
 
-    def _eq(self, other):
-        return self._name == other._name
+class NetIf(_SimpleName):
+    CLASS = 'netif'
 
 
 def get_metadata(version, title, description, authors, url, tags,

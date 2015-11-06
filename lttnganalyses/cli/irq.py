@@ -112,19 +112,10 @@ class IrqAnalysisCommand(Command):
                 self._get_stats_freq_result_tables(begin_ns, end_ns)
 
         if self._mi_mode:
-            if log_table:
-                self._mi_append_result_table(log_table)
-
-            if hard_stats_table and hard_stats_table.rows:
-                self._mi_append_result_table(hard_stats_table)
-
-            if soft_stats_table and soft_stats_table.rows:
-                self._mi_append_result_table(soft_stats_table)
-
-            if freq_tables:
-                for freq_table in freq_tables:
-                    if freq_table.rows:
-                        self._mi_append_result_table(freq_table)
+            self._mi_append_result_table(log_table)
+            self._mi_append_result_table(hard_stats_table)
+            self._mi_append_result_table(soft_stats_table)
+            self._mi_append_result_tables(freq_tables)
         else:
             self._print_date(begin_ns, end_ns)
 

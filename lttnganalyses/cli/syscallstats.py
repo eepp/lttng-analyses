@@ -73,9 +73,7 @@ class SyscallsAnalysis(Command):
         total_table, per_tid_tables = self._get_result_tables(begin_ns, end_ns)
 
         if self._mi_mode:
-            for table in per_tid_tables:
-                self._mi_append_result_table(table)
-
+            self._mi_append_result_tables(per_tid_tables)
             self._mi_append_result_table(total_table)
         else:
             self._print_date(begin_ns, end_ns)

@@ -112,8 +112,18 @@ class Command:
         print(json.dumps(infos))
 
     def _mi_append_result_table(self, result_table):
+        if not result_table or not result_table.rows:
+            return
+
         tc_name = result_table.table_class.name
         self._mi_get_result_tables(tc_name).append(result_table)
+
+    def _mi_append_result_tables(self, result_tables):
+        if not result_tables:
+            return
+
+        for result_table in result_tables:
+            self._mi_append_result_table(result_table)
 
     def _mi_clear_result_tables(self):
         self._result_tables = {}
