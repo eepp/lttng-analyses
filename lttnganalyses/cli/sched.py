@@ -27,6 +27,7 @@ from ..linuxautomaton import common
 from ..ascii_graph import Pyasciigraph
 from . import mi
 import math
+import operator
 import statistics
 import sys
 
@@ -36,9 +37,11 @@ class SchedAnalysisCommand(Command):
     _ANALYSIS_CLASS = sched.SchedAnalysis
     _MI_TITLE = 'Scheduling latencies analysis'
     _MI_DESCRIPTION = \
-        'Scheduling latencies frequency distribution, statistics, and log'
-    _MI_TAGS = [mi.Tags.SCHED, mi.Tags.STATS, mi.Tags.FREQ, mi.Tags.LOG]
+        'Scheduling latencies frequency distribution, statistics, top, and log'
+    _MI_TAGS = [mi.Tags.SCHED, mi.Tags.STATS, mi.Tags.FREQ, mi.Tags.TOP,
+                mi.Tags.LOG]
     _MI_TABLE_CLASS_LOG = 'log'
+    _MI_TABLE_CLASS_TOP = 'top'
     _MI_TABLE_CLASS_TOTAL_STATS = 'total_stats'
     _MI_TABLE_CLASS_PER_TID_STATS = 'per_tid_stats'
     _MI_TABLE_CLASS_PER_PRIO_STATS = 'per_prio_stats'
@@ -48,6 +51,17 @@ class SchedAnalysisCommand(Command):
         (
             _MI_TABLE_CLASS_LOG,
             'Sched switch log', [
+                ('wakeup_ts', 'Wakeup timestamp', mi.Timestamp),
+                ('switch_ts', 'Switch timestamp', mi.Timestamp),
+                ('latency', 'Scheduling latency', mi.Duration),
+                ('prio', 'Priority', mi.Integer),
+                ('wakee_proc', 'Wakee process', mi.Process),
+                ('waker_proc', 'Waker process', mi.Process),
+            ]
+        ),
+        (
+            _MI_TABLE_CLASS_TOP,
+            'Sched switch top', [
                 ('wakeup_ts', 'Wakeup timestamp', mi.Timestamp),
                 ('switch_ts', 'Switch timestamp', mi.Timestamp),
                 ('latency', 'Scheduling latency', mi.Duration),
@@ -95,12 +109,16 @@ class SchedAnalysisCommand(Command):
 
     def _analysis_tick(self, begin_ns, end_ns):
         log_table = None
+        top_table = None
         total_stats_table = None
         per_tid_stats_table = None
         per_prio_stats_table = None
 
         if self._args.log:
             log_table = self._get_log_result_table(begin_ns, end_ns)
+
+        if self._args.top:
+            top_table = self._get_top_result_table(begin_ns, end_ns)
 
         if self._args.stats:
             if self._args.total:
@@ -118,6 +136,9 @@ class SchedAnalysisCommand(Command):
         if self._mi_mode:
             if log_table:
                 self._mi_append_result_table(log_table)
+
+            if top_table:
+                self._mi_append_result_table(top_table)
 
             if total_stats_table and total_stats_table.rows:
                 self._mi_append_result_table(total_stats_table)
@@ -138,17 +159,49 @@ class SchedAnalysisCommand(Command):
                 if per_prio_stats_table:
                     self._print_per_prio_stats(per_prio_stats_table)
 
-                if log_table:
-                    print()
-
             if log_table:
-                self._print_log(log_table)
+                self._print_sched_events(log_table)
+
+            if top_table:
+                self._print_sched_events(top_table)
 
     def _get_log_result_table(self, begin_ns, end_ns):
         result_table = self._mi_create_result_table(self._MI_TABLE_CLASS_LOG,
                                                     begin_ns, end_ns)
 
         for sched_event in self._analysis.sched_list:
+            wakee_proc = mi.Process(sched_event.wakee_proc.comm,
+                                    sched_event.wakee_proc.pid,
+                                    sched_event.wakee_proc.tid)
+
+            if sched_event.waker_proc:
+                waker_proc = mi.Process(sched_event.waker_proc.comm,
+                                        sched_event.waker_proc.pid,
+                                        sched_event.waker_proc.tid)
+            else:
+                waker_proc = mi.Empty()
+
+            result_table.append_row(
+                wakeup_ts=mi.Timestamp(sched_event.wakeup_ts),
+                switch_ts=mi.Timestamp(sched_event.switch_ts),
+                latency=mi.Duration(sched_event.latency),
+                prio=mi.Integer(sched_event.prio),
+                wakee_proc=wakee_proc,
+                waker_proc=waker_proc,
+            )
+
+        return result_table
+
+    def _get_top_result_table(self, begin_ns, end_ns):
+        result_table = self._mi_create_result_table(self._MI_TABLE_CLASS_LOG,
+                                                    begin_ns, end_ns)
+
+        top_events = sorted(self._analysis.sched_list,
+                            key=operator.attrgetter('latency'),
+                            reverse=True)
+        top_events = top_events[:self._args.limit]
+
+        for sched_event in top_events:
             wakee_proc = mi.Process(sched_event.wakee_proc.comm,
                                     sched_event.wakee_proc.pid,
                                     sched_event.wakee_proc.tid)
@@ -274,9 +327,11 @@ class SchedAnalysisCommand(Command):
     def _ns_to_hour_nsec(self, ts):
         return common.ns_to_hour_nsec(ts, self._args.multi_day, self._args.gmt)
 
-    def _print_log(self, result_table):
+    def _print_sched_events(self, result_table):
         fmt = '[{:<18}, {:<18}] {:>15} {:>10} {:<25}  {:<25}'
         title_fmt = '{:<20} {:<19} {:>15} {:>10} {:<25}  {:<25}'
+        print()
+        print(result_table.title)
         print(title_fmt.format('Wakeup', 'Switch', 'Latency (us)', 'Priority',
                                'Wakee', 'Waker'))
         for row in result_table.rows:
@@ -393,6 +448,7 @@ class SchedAnalysisCommand(Command):
         Command._add_freq_args(
             ap, help='Output the frequency distribution of sched switch '
             'latencies')
+        Command._add_top_args(ap, help='Output the top sched switch latencies')
         Command._add_log_args(
             ap, help='Output the sched switches in chronological order')
         Command._add_stats_args(ap, help='Output sched switch statistics')
@@ -421,6 +477,11 @@ def _runlog(mi_mode):
     _run(mi_mode)
 
 
+def _runtop(mi_mode):
+    sys.argv.insert(1, '--top')
+    _run(mi_mode)
+
+
 def _runfreq(mi_mode):
     sys.argv.insert(1, '--freq')
     _run(mi_mode)
@@ -434,6 +495,10 @@ def runlog():
     _runlog(mi_mode=False)
 
 
+def runtop():
+    _runtop(mi_mode=False)
+
+
 def runfreq():
     _runfreq(mi_mode=False)
 
@@ -443,6 +508,10 @@ def runstats_mi():
 
 
 def runlog_mi():
+    _runlog(mi_mode=True)
+
+
+def runtop_mi():
     _runlog(mi_mode=True)
 
 

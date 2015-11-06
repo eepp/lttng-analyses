@@ -274,8 +274,6 @@ class Command:
         ap.add_argument('--gmt', action='store_true',
                         help='Manipulate timestamps based on GMT instead '
                              'of local time')
-        ap.add_argument('--limit', type=int, default=10,
-                        help='Limit to top X (default = 10)')
         ap.add_argument('--skip-validation', action='store_true',
                         help='Skip the trace validation')
         ap.add_argument('--begin', type=str, help='start time: '
@@ -349,6 +347,15 @@ class Command:
             help = 'Output the events in chronological order'
 
         ap.add_argument('--log', action='store_true', help=help)
+
+    @staticmethod
+    def _add_top_args(ap, help=None):
+        if not help:
+            help = 'Output the top results'
+
+        ap.add_argument('--limit', type=int, default=10,
+                        help='Limit to top X (default = 10)')
+        ap.add_argument('--top', action='store_true', help=help)
 
     @staticmethod
     def _add_stats_args(ap, help=None):
