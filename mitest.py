@@ -59,6 +59,7 @@ def _print_metadata():
 
 def _parse_args():
     ap = argparse.ArgumentParser()
+    ap.add_argument('path', nargs='*')
     ap.add_argument('--metadata', action='store_true')
     ap.add_argument('--begin', type=int, default=1000)
     ap.add_argument('--end', type=int, default=2000)
