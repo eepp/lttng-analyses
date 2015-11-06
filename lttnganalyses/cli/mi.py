@@ -136,6 +136,9 @@ class ResultTable:
         row = self._column_named_tuple(**kwargs)
         self._rows.append(row)
 
+    def append_row_tuple(self, row_tuple):
+        self._rows.append(row_tuple)
+
     @property
     def rows(self):
         return self._rows
