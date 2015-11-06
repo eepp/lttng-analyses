@@ -103,6 +103,11 @@ setup(
             'lttng-irqfreq-mi = lttnganalyses.cli.irq:runfreq_mi',
             'lttng-irqlog-mi = lttnganalyses.cli.irq:runlog_mi',
             'lttng-irqstats-mi = lttnganalyses.cli.irq:runstats_mi',
+            'lttng-iolatencyfreq-mi = lttnganalyses.cli.io:runfreq_mi',
+            'lttng-iolatencystats-mi = lttnganalyses.cli.io:runstats_mi',
+            'lttng-iolatencytop-mi = lttnganalyses.cli.io:runlatencytop_mi',
+            'lttng-iolog-mi = lttnganalyses.cli.io:runlog_mi',
+            'lttng-iousagetop-mi = lttnganalyses.cli.io:runusage_mi',
         ],
     },
 
