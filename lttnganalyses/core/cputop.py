@@ -89,8 +89,6 @@ class Cputop(Analysis):
         wakee_proc = kwargs['wakee_proc']
         next_tid = kwargs['next_tid']
 
-        if not self._filter_process(wakee_proc):
-            return
         if not self._filter_cpu(cpu_id):
             return
 
@@ -101,7 +99,7 @@ class Cputop(Analysis):
         if cpu.current_task_start_ts is not None:
             cpu.total_usage_time += timestamp - cpu.current_task_start_ts
 
-        if next_tid == 0:
+        if not self._filter_process(wakee_proc):
             cpu.current_task_start_ts = None
         else:
             cpu.current_task_start_ts = timestamp
@@ -114,8 +112,6 @@ class Cputop(Analysis):
         next_tid = kwargs['next_tid']
         next_comm = kwargs['next_comm']
 
-        if not self._filter_process(wakee_proc):
-            return
         if not self._filter_cpu(cpu_id):
             return
 
@@ -125,8 +121,9 @@ class Cputop(Analysis):
                 prev_proc.total_cpu_time += timestamp - prev_proc.last_sched_ts
                 prev_proc.last_sched_ts = None
 
-        # Don't account for swapper process
-        if next_tid == 0:
+        # Only filter on wakee_proc after finalizing the prev_proc
+        # accounting
+        if not self._filter_process(wakee_proc):
             return
 
         if next_tid not in self.tids:
