@@ -261,33 +261,6 @@ class IrqAnalysisCommand(Command):
             stdev_latency=stdev_latency,
         )
 
-    def _get_uniform_freq_values(self):
-        if self._args.uniform_step is not None:
-            return (self._args.uniform_min, self._args.uniform_max,
-                    self._args.uniform_step)
-
-        durations = [irq.duration for irq in self._analysis.irq_list]
-
-        if self._args.min is not None:
-            self._args.uniform_min = self._args.min
-        else:
-            self._args.uniform_min = min(durations)
-        if self._args.max is not None:
-            self._args.uniform_max = self._args.max
-        else:
-            self._args.uniform_max = max(durations)
-
-        # ns to µs
-        self._args.uniform_min /= 1000
-        self._args.uniform_max /= 1000
-        self._args.uniform_step = (
-            (self._args.uniform_max - self._args.uniform_min) /
-            self._args.freq_resolution
-        )
-
-        return (self._args.uniform_min, self._args.uniform_max,
-                self._args.uniform_step)
-
     def _fill_freq_result_table(self, irq_stats, freq_table):
         # The number of bins for the histogram
         resolution = self._args.freq_resolution
@@ -306,8 +279,9 @@ class IrqAnalysisCommand(Command):
 
         # histogram's step
         if self._args.freq_uniform:
+            durations = [irq.duration for irq in self._analysis.irq_list]
             (min_duration, max_duration, step) = \
-                self._get_uniform_freq_values()
+                self._get_uniform_freq_values(durations)
         else:
             step = (max_duration - min_duration) / resolution
 

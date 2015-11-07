@@ -209,6 +209,31 @@ class Command:
                                    multi_day=True))
         self._print(date)
 
+    def _get_uniform_freq_values(self, durations):
+        if self._args.uniform_step is not None:
+            return (self._args.uniform_min, self._args.uniform_max,
+                    self._args.uniform_step)
+
+        if self._args.min is not None:
+            self._args.uniform_min = self._args.min
+        else:
+            self._args.uniform_min = min(durations)
+        if self._args.max is not None:
+            self._args.uniform_max = self._args.max
+        else:
+            self._args.uniform_max = max(durations)
+
+        # ns to µs
+        self._args.uniform_min /= 1000
+        self._args.uniform_max /= 1000
+        self._args.uniform_step = (
+            (self._args.uniform_max - self._args.uniform_min) /
+            self._args.freq_resolution
+        )
+
+        return (self._args.uniform_min, self._args.uniform_max,
+                self._args.uniform_step)
+
     def _validate_transform_common_args(self, args):
         refresh_period_ns = None
         if args.refresh is not None:
