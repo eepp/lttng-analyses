@@ -231,8 +231,8 @@ class Command:
             self._args.freq_resolution
         )
 
-        return (self._args.uniform_min, self._args.uniform_max,
-                self._args.uniform_step)
+        return self._args.uniform_min, self._args.uniform_max, \
+               self._args.uniform_step
 
     def _validate_transform_common_args(self, args):
         refresh_period_ns = None
@@ -274,6 +274,10 @@ class Command:
             args.uniform_min = None
             args.uniform_max = None
             args.uniform_step = None
+
+            if args.freq_series:
+                # implies uniform buckets
+                args.freq_uniform = True
 
         if self._mi_mode:
             # force no progress in MI mode

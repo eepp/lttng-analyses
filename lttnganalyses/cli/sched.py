@@ -410,30 +410,26 @@ class SchedAnalysisCommand(Command):
 
         return result_table
 
-    def _fill_freq_result_table(self, sched_list, stats, freq_table):
+    def _fill_freq_result_table(self, sched_list, stats, min_duration,
+                                max_duration, step, freq_table):
         # The number of bins for the histogram
         resolution = self._args.freq_resolution
 
-        if self._args.min is not None:
-            min_duration = self._args.min
-        else:
-            min_duration = stats.min
+        if not self._args.freq_uniform:
+            if self._args.min is not None:
+                min_duration = self._args.min
+            else:
+                min_duration = stats.min
 
-        if self._args.max is not None:
-            max_duration = self._args.max
-        else:
-            max_duration = stats.max
+            if self._args.max is not None:
+                max_duration = self._args.max
+            else:
+                max_duration = stats.max
 
-        # ns to µs
-        min_duration /= 1000
-        max_duration /= 1000
+            # ns to µs
+            min_duration /= 1000
+            max_duration /= 1000
 
-        # histogram's step
-        if self._args.freq_uniform:
-            durations = [sched.latency for sched in sched_list]
-            (min_duration, max_duration, step) = \
-                self._get_uniform_freq_values(durations)
-        else:
             step = (max_duration - min_duration) / resolution
 
         if step == 0:
@@ -449,12 +445,16 @@ class SchedAnalysisCommand(Command):
         for sched in sched_list:
             duration = sched.latency / 1000
             index = int((duration - min_duration) / step)
+
             if index >= resolution:
+                # special case for max value: put in last bucket (includes
+                # its upper bound)
+                if duration == max_duration:
+                    counts[index - 1] += 1
+
                 continue
 
             counts[index] += 1
-
-        graph_data = []
 
         for index, count in enumerate(counts):
             lower_bound = index * step + min_duration
@@ -468,6 +468,18 @@ class SchedAnalysisCommand(Command):
     def _get_per_prio_freq_result_tables(self, begin_ns, end_ns):
         freq_tables = []
         prio_sched_lists, prio_stats = self._get_prio_sched_lists_stats()
+        min_duration = None
+        max_duration = None
+        step = None
+
+        if self._args.freq_uniform:
+            latencies = []
+
+            for sched_list in prio_sched_lists.values():
+                latencies += [sched.latency for sched in sched_list]
+
+            min_duration, max_duration, step = \
+                self._get_uniform_freq_values(latencies)
 
         for prio in sorted(prio_sched_lists):
             sched_list = prio_sched_lists[prio]
@@ -476,7 +488,8 @@ class SchedAnalysisCommand(Command):
             freq_table = \
                 self._mi_create_result_table(self._MI_TABLE_CLASS_FREQ,
                                              begin_ns, end_ns, subtitle)
-            self._fill_freq_result_table(sched_list, stats, freq_table)
+            self._fill_freq_result_table(sched_list, stats, min_duration,
+                                         max_duration, step, freq_table)
             freq_tables.append(freq_table)
 
         return freq_tables
