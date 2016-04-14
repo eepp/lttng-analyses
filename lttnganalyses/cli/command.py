@@ -62,15 +62,20 @@ class Command:
     def mi_mode(self):
         return self._mi_mode
 
-    def run(self):
+    def _run_step(self, fn, cannot_msg):
         try:
-            self._parse_args()
-            self._open_trace()
-            self._create_analysis()
-            self._run_analysis()
-            self._close_trace()
+            fn()
         except KeyboardInterrupt:
             sys.exit(0)
+        except Exception as e:
+            self._error('Cannot {}: {}'.format(cannot_msg, e))
+
+    def run(self):
+        self._run_step(self._parse_args, 'parse arguments')
+        self._run_step(self._open_trace, 'open trace')
+        self._run_step(self._create_analysis, 'create analysis')
+        self._run_step(self._run_analysis, 'run analysis')
+        self._run_step(self._close_trace, 'close trace')
 
     def _mi_error(self, msg, code=None):
         print(json.dumps(mi.get_error(msg, code)))
