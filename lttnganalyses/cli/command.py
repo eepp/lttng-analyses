@@ -335,7 +335,11 @@ class Command:
                 self._gen_error('Trace has no intersection. '
                                 'Use --no-intersection to override')
 
+        first_event = True
         for event in self._traces.events:
+            if first_event is True:
+                self._analysis.begin_analysis(event)
+                first_event = False
             self._pb_update(event)
             self._analysis.process_event(event)
             if self._analysis.ended:
@@ -343,7 +347,7 @@ class Command:
             self._automaton.process_event(event)
 
         self._pb_finish()
-        self._analysis.end()
+        self._analysis.end_analysis()
         self._post_analysis()
 
     def _print_date(self, begin_ns, end_ns):
@@ -692,12 +696,12 @@ class Command:
         self._automaton = automaton.Automaton()
         self.state = self._automaton.state
 
-    def _analysis_tick_cb(self, **kwargs):
+    def _analysis_tick_cb(self, period, **kwargs):
         begin_ns = kwargs['begin_ns']
         end_ns = kwargs['end_ns']
 
-        self._analysis_tick(begin_ns, end_ns)
+        self._analysis_tick(period, begin_ns, end_ns)
         self._ticks += 1
 
-    def _analysis_tick(self, begin_ns, end_ns):
+    def _analysis_tick(self, period, begin_ns, end_ns):
         raise NotImplementedError()

@@ -21,6 +21,11 @@
 # SOFTWARE.
 
 
+class PeriodData:
+    def __init__(self, start_ts):
+        self._period_start_ts = start_ts
+
+
 class AnalysisConfig:
     def __init__(self):
         self.refresh_period = None
@@ -45,10 +50,10 @@ class Analysis:
         self._state = state
         self._conf = conf
         self._period_key = None
-        self._period_start_ts = None
         self._last_event_ts = None
-        self._notification_cbs = {}
+        self._notification_cli_cbs = {}
         self._cbs = {}
+        self._periods = []
 
         self.started = False
         self.ended = False
@@ -66,33 +71,41 @@ class Analysis:
                 if not self.started:
                     return
             else:
-                self._period_start_ts = ev.timestamp
+#                self._period_start_ts = ev.timestamp
                 self.started = True
 
         # Prioritise period events over refresh period
         if self._conf.period_begin_ev_name is not None:
             self._handle_period_event(ev)
-        elif self._conf.refresh_period is not None:
-            self._check_refresh(ev)
+        for period in self._periods:
+            if self._conf.refresh_period is not None:
+                self._check_refresh(period, ev)
 
-    def reset(self):
+    def reset(self, period):
         raise NotImplementedError()
 
-    def end(self):
-        if self._period_start_ts:
-            self._end_period()
+    def begin_analysis(self, first_event):
+        # If we do not have any period defined, create a
+        # period starting at the first event
+        if self._conf.period_begin_ev_name is None and \
+                self._conf.begin_ts is None:
+            self._begin_period(None, first_event.timestamp)
+
+    def end_analysis(self):
+        for period in self._periods:
+            self._end_period(period)
 
     def register_notification_cbs(self, cbs):
         for name in cbs:
-            if name not in self._notification_cbs:
-                self._notification_cbs[name] = []
+            if name not in self._notification_cli_cbs:
+                self._notification_cli_cbs[name] = []
 
-            self._notification_cbs[name].append(cbs[name])
+            self._notification_cli_cbs[name].append(cbs[name])
 
-    def _send_notification_cb(self, name, **kwargs):
-        if name in self._notification_cbs:
-            for cb in self._notification_cbs[name]:
-                cb(**kwargs)
+    def _send_notification_cb(self, period, name, **kwargs):
+        if name in self._notification_cli_cbs:
+            for cb in self._notification_cli_cbs[name]:
+                cb(period, **kwargs)
 
     def _register_cbs(self, cbs):
         self._cbs = cbs
@@ -112,23 +125,26 @@ class Analysis:
 
     def _check_analysis_begin(self, ev):
         if self._conf.begin_ts and ev.timestamp >= self._conf.begin_ts:
+            self._begin_period(None, ev.timestamp)
             self.started = True
-            self._period_start_ts = ev.timestamp
-            self.reset()
 
     def _check_analysis_end(self, ev):
         if self._conf.end_ts and ev.timestamp > self._conf.end_ts:
             self.ended = True
 
-    def _check_refresh(self, ev):
-        if not self._period_start_ts:
-            self._period_start_ts = ev.timestamp
-        elif ev.timestamp >= (self._period_start_ts +
+    def _check_refresh(self, period, ev):
+        if not period._period_start_ts:
+            print("TMP DEBUG: should not happen")
+#                self._period_start_ts = ev.timestamp
+        elif ev.timestamp >= (period._period_start_ts +
                               self._conf.refresh_period):
-            self._end_period()
-            self._period_start_ts = ev.timestamp
+            # close the current period and create a new one
+            self._end_period(period)
+            self._begin_period(None, ev.timestamp)
 
     def _handle_period_event(self, ev):
+        # FIXME: does not work
+        period = None
         if ev.name != self._conf.period_begin_ev_name and \
            ev.name != self._conf.period_end_ev_name:
             return
@@ -147,9 +163,9 @@ class Analysis:
                     if ev.name == self._conf.period_end_ev_name:
                         self._end_period()
                         self._period_key = None
-                        self._period_start_ts = None
+                        period._period_start_ts = None
                 elif ev.name == self._conf.period_begin_ev_name:
-                    self._end_period()
+                    self._end_period(period)
                     self._begin_period(period_key, ev.timestamp)
         elif ev.name == self._conf.period_begin_ev_name:
             period_key = Analysis._get_period_event_key(
@@ -168,16 +184,19 @@ class Analysis:
 
     def _begin_period(self, period_key, timestamp):
         self._period_key = period_key
-        self._period_start_ts = timestamp
-        self.reset()
+        new_period = PeriodData(timestamp)
+        self._periods.append(new_period)
+        self.reset(new_period)
 
-    def _end_period(self):
-        self._end_period_cb()
-        self._send_notification_cb(Analysis.TICK_CB,
-                                   begin_ns=self._period_start_ts,
+    def _end_period(self, period):
+        self._end_period_cb(period)
+        self._send_notification_cb(period, Analysis.TICK_CB,
+                                   begin_ns=period._period_start_ts,
                                    end_ns=self._last_event_ts)
+        self._state.clear_period_notification_cbs(period)
+        self._periods.remove(period)
 
-    def _end_period_cb(self):
+    def _end_period_cb(self, period):
         pass
 
     @staticmethod
