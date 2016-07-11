@@ -20,20 +20,27 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from . import period as core_period
+from . import event as core_event
+
 
 class PeriodData:
-    def __init__(self, start_ts):
+    def __init__(self, start_ts, begin_context=None):
         self._period_start_ts = start_ts
+        self._begin_context = begin_context
+
+    @property
+    def period_start_ts(self):
+        return self._period_start_ts
+
+    @property
+    def begin_context(self):
+        return self._begin_context
 
 
 class AnalysisConfig:
     def __init__(self):
         self.refresh_period = None
-        self.period_begin_ev_name = None
-        self.period_end_ev_name = None
-        self.period_begin_key_fields = None
-        self.period_end_key_fields = None
-        self.period_key_value = None
         self.begin_ts = None
         self.end_ts = None
         self.min_duration = None
@@ -54,7 +61,7 @@ class Analysis:
         self._last_event_ts = None
         self._notification_cli_cbs = {}
         self._cbs = {}
-        self._periods = []
+        self._periods = set()
 
         self.started = False
         self.ended = False
@@ -75,7 +82,22 @@ class Analysis:
 #                self._period_start_ts = ev.timestamp
                 self.started = True
 
-        # Prioritise period events over refresh period
+        # match context: current event
+        match_context = core_period.MatchContext(ev)
+
+        # check for end of current periods
+        for period in self._periods:
+            if core_period.expr_matches(period_def.end_expr, match_context,
+                                        period.begin_context):
+
+        # check for begin of period
+        for period_def in self._conf.period_defs:
+            if core_period.expr_matches(period_def.begin_expr, match_context):
+                begin_ev = core_event.Event(ev)
+                begin_context = MatchContext(begin_ev)
+                self._open_period(period_def, ev.timestamp, begin_context)
+
+        # FIXME: julien
         if self._conf.period_begin_ev_name is not None:
             self._handle_period_event(ev)
         for period in self._periods:
@@ -90,11 +112,11 @@ class Analysis:
         # period starting at the first event
         if self._conf.period_begin_ev_name is None and \
                 self._conf.begin_ts is None:
-            self._begin_period(None, first_event.timestamp)
+            self._open_period(None, first_event.timestamp)
 
     def end_analysis(self):
         for period in self._periods:
-            self._end_period(period)
+            self._close_period(period)
 
     def register_notification_cbs(self, cbs):
         for name in cbs:
@@ -126,7 +148,7 @@ class Analysis:
 
     def _check_analysis_begin(self, ev):
         if self._conf.begin_ts and ev.timestamp >= self._conf.begin_ts:
-            self._begin_period(None, ev.timestamp)
+            self._open_period(None, ev.timestamp)
             self.started = True
 
     def _check_analysis_end(self, ev):
@@ -134,14 +156,14 @@ class Analysis:
             self.ended = True
 
     def _check_refresh(self, period, ev):
-        if not period._period_start_ts:
+        if not period.period_start_ts:
             print("TMP DEBUG: should not happen")
-#                self._period_start_ts = ev.timestamp
-        elif ev.timestamp >= (period._period_start_ts +
+#                self.period_start_ts = ev.timestamp
+        elif ev.timestamp >= (period.period_start_ts +
                               self._conf.refresh_period):
             # close the current period and create a new one
-            self._end_period(period)
-            self._begin_period(None, ev.timestamp)
+            self._close_period(period)
+            self._open_period(None, ev.timestamp)
 
     def _handle_period_event(self, ev):
         # FIXME: does not work
@@ -162,12 +184,12 @@ class Analysis:
             if period_key == self._period_key:
                 if self._conf.period_end_ev_name:
                     if ev.name == self._conf.period_end_ev_name:
-                        self._end_period()
+                        self._close_period()
                         self._period_key = None
-                        period._period_start_ts = None
+                        period.period_start_ts = None
                 elif ev.name == self._conf.period_begin_ev_name:
-                    self._end_period(period)
-                    self._begin_period(period_key, ev.timestamp)
+                    self._close_period(period)
+                    self._open_period(period_key, ev.timestamp)
         elif ev.name == self._conf.period_begin_ev_name:
             period_key = Analysis._get_period_event_key(
                 ev, self._conf.period_begin_key_fields)
@@ -181,24 +203,19 @@ class Analysis:
                 if self._conf.period_key_value != str_period_key:
                     return
 
-            self._begin_period(period_key, ev.timestamp)
+            self._open_period(period_key, ev.timestamp)
 
-    def _begin_period(self, period_key, timestamp):
-        self._period_key = period_key
-        new_period = PeriodData(timestamp)
-        self._periods.append(new_period)
+    def _open_period(self, period_def, timestamp, begin_context):
+        new_period = PeriodData(period_def, timestamp, begin_context)
+        self._periods.add(new_period)
         self.reset(new_period)
 
-    def _end_period(self, period):
-        self._end_period_cb(period)
+    def _close_period(self, period):
         self._send_notification_cb(period, Analysis.TICK_CB,
-                                   begin_ns=period._period_start_ts,
+                                   begin_ns=period.period_start_ts,
                                    end_ns=self._last_event_ts)
         self._state.clear_period_notification_cbs(period)
         self._periods.remove(period)
-
-    def _end_period_cb(self, period):
-        pass
 
     @staticmethod
     def _get_period_event_key(ev, key_fields):
