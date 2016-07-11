@@ -132,6 +132,10 @@ setup(
         'lttng-track-process'
     ],
 
+    install_requires=[
+        'pyparsing',
+    ],
+
     extras_require={
         'progressbar':  ["progressbar"]
     },

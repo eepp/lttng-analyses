@@ -798,7 +798,9 @@ class SchedAnalysisCommand(Command):
         for freq_table in freq_tables:
             self._print_frequency_distribution(freq_table)
 
-    def _validate_transform_args(self, args):
+    def _validate_transform_args(self):
+        args = self._args
+
         # If neither --total nor --per-prio are specified, default
         # to --per-tid
         if not (args.total or args.per_prio):

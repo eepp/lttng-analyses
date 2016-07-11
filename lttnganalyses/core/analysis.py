@@ -41,6 +41,7 @@ class AnalysisConfig:
         self.proc_list = None
         self.tid_list = None
         self.cpu_list = None
+        self.period_defs = []
 
 
 class Analysis:

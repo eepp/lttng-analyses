@@ -451,7 +451,8 @@ class IrqAnalysisCommand(Command):
                              '%d' % cpu_id, irqtype, irq_do.nr,
                              irq_do.name + raised_ts))
 
-    def _validate_transform_args(self, args):
+    def _validate_transform_args(self):
+        args = self._args
         args.irq_filter_list = None
         args.softirq_filter_list = None
 
