@@ -650,9 +650,11 @@ Examples
 
   - The current event name is ``sched_switch`` *AND*
   - The current event's ``prev_tid`` field is equal to
-    the ``next_tid`` field of the matched event in the begin expression *AND*
+    the ``next_tid`` field of the matched event in the beginning
+    expression *AND*
   - The current event's ``cpu_id`` field is equal to
-    the ``cpu_id`` field of the matched event in the begin expression.
+    the ``cpu_id`` field of the matched event in the beginning
+    expression.
 
   Period definition::
 
@@ -669,14 +671,15 @@ Examples
   - The current event name satisfies the ``irq_*_entry`` globbing
     pattern *AND*
   - The current event's ``cpu_id`` field is equal to the ``cpu_id``
-    field of the matched event in the begin expression of the parent
+    field of the matched event in the beginning expression of the parent
     period instance.
 
   End this period instance when:
 
   - The current event name is ``irq_handler_exit`` *AND*
   - The current event's ``cpu_id`` field is equal to
-    the ``cpu_id`` field of the matched event in the begin expression.
+    the ``cpu_id`` field of the matched event in the beginning
+    expression.
 
   Period definition::
 
@@ -694,7 +697,7 @@ Examples
   End this period instance when:
 
   - The current event name is the same as the name of the matched event
-    in the begin expression *AND*
+  	in the beginning expression *AND*
   - The current event's ``theid`` header field is lesser than or equal
     to 231.
 
